@@ -14,7 +14,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc && node scripts/copy-assets.js",
+    "build": "tsc && node scripts/copy-assets.js && chmod +x dist/bin/kirograph.js",
     "postinstall": "node scripts/postinstall.js",
     "dev": "tsc --watch",
     "test": "vitest --run",
