@@ -12,6 +12,7 @@ export const EXTENSION_MAP: Record<string, Language> = {
   '.mjs': 'javascript',
   '.cjs': 'javascript',
   '.py': 'python',
+  '.pyw': 'python',
   '.go': 'go',
   '.rs': 'rust',
   '.java': 'java',
@@ -19,15 +20,25 @@ export const EXTENSION_MAP: Record<string, Language> = {
   '.h': 'c',
   '.cpp': 'cpp',
   '.cc': 'cpp',
+  '.cxx': 'cpp',
+  '.hxx': 'cpp',
   '.hpp': 'cpp',
   '.cs': 'csharp',
   '.php': 'php',
   '.rb': 'ruby',
+  '.rake': 'ruby',
   '.swift': 'swift',
   '.kt': 'kotlin',
   '.kts': 'kotlin',
   '.dart': 'dart',
   '.svelte': 'svelte',
+  '.pas': 'pascal',
+  '.dpr': 'pascal',
+  '.dpk': 'pascal',
+  '.lpr': 'pascal',
+  '.dfm': 'pascal',
+  '.fmx': 'pascal',
+  '.liquid': 'liquid',
 };
 
 export const GRAMMAR_MAP: Record<Language, string> = {
@@ -48,6 +59,9 @@ export const GRAMMAR_MAP: Record<Language, string> = {
   kotlin: 'tree-sitter-kotlin',
   dart: 'tree-sitter-dart',
   svelte: 'tree-sitter-svelte',
+  // Pascal and Liquid require custom WASM not bundled in tree-sitter-wasms
+  pascal: '',
+  liquid: '',
   unknown: '',
 };
 
@@ -57,5 +71,8 @@ export function detectLanguage(filePath: string): Language {
 }
 
 export function isSupportedLanguage(lang: Language): boolean {
-  return lang !== 'unknown' && GRAMMAR_MAP[lang] !== '';
+  // All known languages are "supported" for indexing purposes.
+  // Pascal and Liquid don't have a grammar WASM, so they'll be indexed
+  // with empty symbol lists (file tracked but no AST extraction).
+  return lang !== 'unknown';
 }

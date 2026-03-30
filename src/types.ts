@@ -15,7 +15,7 @@ export type EdgeKind =
 export type Language =
   | 'typescript' | 'javascript' | 'tsx' | 'jsx' | 'python' | 'go' | 'rust'
   | 'java' | 'c' | 'cpp' | 'csharp' | 'php' | 'ruby' | 'swift' | 'kotlin'
-  | 'dart' | 'svelte' | 'unknown';
+  | 'dart' | 'svelte' | 'pascal' | 'liquid' | 'unknown';
 
 export interface Node {
   id: string;
@@ -64,10 +64,42 @@ export interface SearchResult {
   matchType: 'exact' | 'prefix' | 'fuzzy' | 'semantic';
 }
 
+export interface SearchOptions {
+  kinds?: NodeKind[];
+  languages?: Language[];
+  limit?: number;
+  minScore?: number;
+}
+
 export interface Subgraph {
   nodes: Node[];
   edges: Edge[];
   entryPoints: string[];
+}
+
+export interface NodeContext {
+  node: Node;
+  ancestors: Node[];
+  children: Node[];
+  callers: Node[];
+  callees: Node[];
+}
+
+export interface NodeMetrics {
+  incomingEdgeCount: number;
+  outgoingEdgeCount: number;
+  callCount: number;
+  callerCount: number;
+  childCount: number;
+}
+
+export interface GraphStats {
+  files: number;
+  nodes: number;
+  edges: number;
+  nodesByKind: Record<string, number>;
+  filesByLanguage: Record<string, number>;
+  dbSizeBytes: number;
 }
 
 export interface TaskContext {
@@ -103,4 +135,45 @@ export interface SyncResult {
   nodesRemoved: number;
   errors: string[];
   duration: number;
+}
+
+// ── Error Classes ──────────────────────────────────────────────────────────────
+
+export class KiroGraphError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+    public readonly context?: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'KiroGraphError';
+  }
+}
+
+export class FileError extends KiroGraphError {
+  constructor(message: string, public readonly filePath: string) {
+    super(message, 'FILE_ERROR', { filePath });
+    this.name = 'FileError';
+  }
+}
+
+export class ParseError extends KiroGraphError {
+  constructor(message: string, public readonly filePath: string, public readonly line?: number) {
+    super(message, 'PARSE_ERROR', { filePath, line });
+    this.name = 'ParseError';
+  }
+}
+
+export class DatabaseError extends KiroGraphError {
+  constructor(message: string) {
+    super(message, 'DATABASE_ERROR');
+    this.name = 'DatabaseError';
+  }
+}
+
+export class ConfigError extends KiroGraphError {
+  constructor(message: string) {
+    super(message, 'CONFIG_ERROR');
+    this.name = 'ConfigError';
+  }
 }

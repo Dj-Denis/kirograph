@@ -5,10 +5,12 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
-import type { Node, Edge, FileRecord, NodeKind, Language } from '../types';
+import type { Node, Edge, FileRecord, NodeKind, Language, GraphStats, NodeContext, NodeMetrics, SearchOptions } from '../types';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { Database } = require('node-sqlite3-wasm');
+
+const CURRENT_SCHEMA_VERSION = 1;
 
 export class GraphDatabase {
   private db: any;
@@ -20,7 +22,15 @@ export class GraphDatabase {
     fs.mkdirSync(dbDir, { recursive: true });
     const dbPath = path.join(dbDir, 'kirograph.db');
     this.db = new Database(dbPath);
-    this.db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
+    this.db.exec(`
+      PRAGMA journal_mode=WAL;
+      PRAGMA foreign_keys=ON;
+      PRAGMA busy_timeout=120000;
+      PRAGMA synchronous=NORMAL;
+      PRAGMA cache_size=-64000;
+      PRAGMA temp_store=MEMORY;
+      PRAGMA mmap_size=268435456;
+    `);
     this.applySchema();
   }
 
@@ -28,13 +38,20 @@ export class GraphDatabase {
     const schemaPath = path.join(__dirname, '../db/schema.sql');
     const sql = fs.readFileSync(schemaPath, 'utf8');
     this.db.exec(sql);
-    // Migrate: add line/column to unresolved_refs if missing (existing databases)
-    try {
-      this.db.exec('ALTER TABLE unresolved_refs ADD COLUMN line INTEGER');
-    } catch { /* column already exists */ }
-    try {
-      this.db.exec('ALTER TABLE unresolved_refs ADD COLUMN column INTEGER');
-    } catch { /* column already exists */ }
+    this.runMigrations();
+  }
+
+  private runMigrations(): void {
+    // Record initial schema version if not present
+    const versionRow = this.db.get('SELECT version FROM schema_versions ORDER BY version DESC LIMIT 1');
+    const currentVersion = versionRow ? versionRow.version : 0;
+
+    if (currentVersion < CURRENT_SCHEMA_VERSION) {
+      // Migration 1: schema.sql now includes all columns — nothing extra needed.
+      // The schema CREATE IF NOT EXISTS statements handle initial setup.
+      this.db.run('INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)',
+        [CURRENT_SCHEMA_VERSION, Date.now()]);
+    }
   }
 
   // ── Files ──────────────────────────────────────────────────────────────────
@@ -112,11 +129,12 @@ export class GraphDatabase {
     return this.db.all('SELECT * FROM nodes WHERE file_path = ?', [filePath]).map(this.rowToNode);
   }
 
-  findNodesByExactName(name: string, kind?: NodeKind, limit = 20): Node[] {
-    if (kind) {
+  findNodesByExactName(name: string, kinds?: NodeKind[], limit = 20): Node[] {
+    if (kinds && kinds.length > 0) {
+      const placeholders = kinds.map(() => '?').join(',');
       return this.db.all(
-        'SELECT * FROM nodes WHERE name = ? AND kind = ? LIMIT ?',
-        [name, kind, limit]
+        `SELECT * FROM nodes WHERE name = ? AND kind IN (${placeholders}) LIMIT ?`,
+        [name, ...kinds, limit]
       ).map(this.rowToNode);
     }
     return this.db.all(
@@ -125,39 +143,53 @@ export class GraphDatabase {
     ).map(this.rowToNode);
   }
 
-  searchNodes(query: string, kind?: NodeKind, limit = 20): Node[] {
+  searchNodes(query: string, opts: SearchOptions = {}): Node[] {
+    const { kinds, languages, limit = 20 } = opts;
     // Sanitize for FTS5: escape special chars and append wildcard
     const safe = query.replace(/['"*()]/g, ' ').trim();
     const ftsQuery = safe ? safe + '*' : safe;
-    if (kind) {
-      return this.db.all(
-        `SELECT n.* FROM nodes n
-         JOIN nodes_fts f ON n.id = f.id
-         WHERE nodes_fts MATCH ? AND n.kind = ?
-         ORDER BY rank LIMIT ?`,
-        [ftsQuery, kind, limit]
-      ).map(this.rowToNode);
+
+    const conditions: string[] = ['nodes_fts MATCH ?'];
+    const params: any[] = [ftsQuery];
+
+    if (kinds && kinds.length > 0) {
+      conditions.push(`n.kind IN (${kinds.map(() => '?').join(',')})`);
+      params.push(...kinds);
     }
+    if (languages && languages.length > 0) {
+      conditions.push(`n.language IN (${languages.map(() => '?').join(',')})`);
+      params.push(...languages);
+    }
+    params.push(limit);
+
     return this.db.all(
       `SELECT n.* FROM nodes n
        JOIN nodes_fts f ON n.id = f.id
-       WHERE nodes_fts MATCH ?
+       WHERE ${conditions.join(' AND ')}
        ORDER BY rank LIMIT ?`,
-      [ftsQuery, limit]
+      params
     ).map(this.rowToNode);
   }
 
-  searchNodesByName(name: string, kind?: NodeKind, limit = 20): Node[] {
+  searchNodesByName(name: string, opts: SearchOptions = {}): Node[] {
+    const { kinds, languages, limit = 20 } = opts;
     const pattern = `%${name}%`;
-    if (kind) {
-      return this.db.all(
-        'SELECT * FROM nodes WHERE name LIKE ? AND kind = ? LIMIT ?',
-        [pattern, kind, limit]
-      ).map(this.rowToNode);
+    const conditions: string[] = ['name LIKE ?'];
+    const params: any[] = [pattern];
+
+    if (kinds && kinds.length > 0) {
+      conditions.push(`kind IN (${kinds.map(() => '?').join(',')})`);
+      params.push(...kinds);
     }
+    if (languages && languages.length > 0) {
+      conditions.push(`language IN (${languages.map(() => '?').join(',')})`);
+      params.push(...languages);
+    }
+    params.push(limit);
+
     return this.db.all(
-      'SELECT * FROM nodes WHERE name LIKE ? LIMIT ?',
-      [pattern, limit]
+      `SELECT * FROM nodes WHERE ${conditions.join(' AND ')} LIMIT ?`,
+      params
     ).map(this.rowToNode);
   }
 
@@ -303,58 +335,147 @@ export class GraphDatabase {
   }
 
   /**
-   * Resolve pending call references using 3-strategy name matching:
-   * 1. Exact name match
-   * 2. Qualified name suffix match (::name)
-   * 3. Case-insensitive fuzzy match
+   * Resolve pending references:
+   * - refKind='function': 3-strategy name matching → 'calls' edge
+   * - refKind='import': path-based resolution → 'imports' edge
    *
    * Returns the number of edges successfully created.
    */
-  resolveCallEdges(): number {
-    const refs = this.db.all('SELECT * FROM unresolved_refs WHERE ref_kind = ?', ['function']);
+  resolveUnresolvedRefs(): number {
+    const refs = this.db.all('SELECT * FROM unresolved_refs');
     let resolved = 0;
 
     for (const ref of refs) {
-      const { id: refId, source_id: sourceId, ref_name: refName, line, column } = ref;
+      const { id: refId, source_id: sourceId, ref_name: refName, ref_kind: refKind, file_path: filePath, line, column } = ref;
 
-      // Strategy 1: exact name match
-      let target = this.db.get('SELECT id FROM nodes WHERE name = ? LIMIT 1', [refName]);
+      if (refKind === 'function') {
+        // Strategy 1: exact name match
+        let target = this.db.get('SELECT id FROM nodes WHERE name = ? LIMIT 1', [refName]);
 
-      // Strategy 2: qualified name suffix
-      if (!target) {
-        target = this.db.get(
-          `SELECT id FROM nodes WHERE qualified_name LIKE ? LIMIT 1`,
-          [`%::${refName}`]
-        );
-      }
+        // Strategy 2: qualified name suffix
+        if (!target) {
+          target = this.db.get(
+            `SELECT id FROM nodes WHERE qualified_name LIKE ? LIMIT 1`,
+            [`%::${refName}`]
+          );
+        }
 
-      // Strategy 3: case-insensitive
-      if (!target) {
-        target = this.db.get(
-          'SELECT id FROM nodes WHERE lower(name) = lower(?) LIMIT 1',
-          [refName]
-        );
-      }
+        // Strategy 3: case-insensitive
+        if (!target) {
+          target = this.db.get(
+            'SELECT id FROM nodes WHERE lower(name) = lower(?) LIMIT 1',
+            [refName]
+          );
+        }
 
-      if (target) {
-        this.insertEdge({ source: sourceId, target: target.id, kind: 'calls', line: line ?? undefined, column: column ?? undefined });
-        this.db.run('DELETE FROM unresolved_refs WHERE id = ?', [refId]);
-        resolved++;
+        if (target) {
+          this.insertEdge({ source: sourceId, target: target.id, kind: 'calls', line: line ?? undefined, column: column ?? undefined });
+          this.db.run('DELETE FROM unresolved_refs WHERE id = ?', [refId]);
+          resolved++;
+        }
+      } else if (refKind === 'import') {
+        // Resolve import path to an indexed file
+        const targetFileNode = this.resolveImportPath(refName, filePath);
+        if (targetFileNode) {
+          this.insertEdge({ source: sourceId, target: targetFileNode, kind: 'imports', line: line ?? undefined, column: column ?? undefined });
+          this.db.run('DELETE FROM unresolved_refs WHERE id = ?', [refId]);
+          resolved++;
+        }
       }
     }
 
     return resolved;
   }
 
+  /** @deprecated Use resolveUnresolvedRefs() */
+  resolveCallEdges(): number {
+    return this.resolveUnresolvedRefs();
+  }
+
+  /**
+   * Resolve a module import path to the ID of the first node in the target file.
+   * Returns null if no indexed file matches.
+   */
+  private resolveImportPath(importPath: string, sourceFilePath: string): string | null {
+    // Only resolve relative imports
+    if (!importPath.startsWith('.')) return null;
+
+    const sourceDir = sourceFilePath.replace(/[^/]+$/, '');
+    // Normalize the relative path
+    const segments = (sourceDir + importPath).split('/');
+    const normalized: string[] = [];
+    for (const seg of segments) {
+      if (seg === '..') normalized.pop();
+      else if (seg !== '.') normalized.push(seg);
+    }
+    const basePath = normalized.join('/');
+
+    // Try exact match, then with common extensions
+    const candidates = [
+      basePath,
+      basePath + '.ts',
+      basePath + '.tsx',
+      basePath + '.js',
+      basePath + '.jsx',
+      basePath + '/index.ts',
+      basePath + '/index.tsx',
+      basePath + '/index.js',
+    ];
+
+    for (const candidate of candidates) {
+      const row = this.db.get('SELECT id FROM nodes WHERE file_path = ? LIMIT 1', [candidate]);
+      if (row) return row.id;
+    }
+
+    return null;
+  }
+
+  // ── Node Context & Metrics ─────────────────────────────────────────────────
+
+  getNodeContext(nodeId: string): NodeContext | null {
+    const node = this.getNode(nodeId);
+    if (!node) return null;
+
+    const ancestors = this.db.all(
+      `SELECT n.* FROM nodes n
+       JOIN edges e ON e.target = n.id
+       WHERE e.source = ? AND e.kind = 'contains'`,
+      [nodeId]
+    ).map(this.rowToNode);
+
+    const children = this.db.all(
+      `SELECT n.* FROM nodes n
+       JOIN edges e ON e.source = n.id
+       WHERE e.target = n.id AND e.source = ? AND e.kind = 'contains'`,
+      [nodeId]
+    ).map(this.rowToNode);
+
+    const callers = this.getCallers(nodeId, 20);
+    const callees = this.getCallees(nodeId, 20);
+
+    return { node, ancestors, children, callers, callees };
+  }
+
+  getNodeMetrics(nodeId: string): NodeMetrics {
+    const incomingEdgeCount = (this.db.get('SELECT COUNT(*) as c FROM edges WHERE target = ?', [nodeId])?.c ?? 0);
+    const outgoingEdgeCount = (this.db.get('SELECT COUNT(*) as c FROM edges WHERE source = ?', [nodeId])?.c ?? 0);
+    const callCount = (this.db.get(`SELECT COUNT(*) as c FROM edges WHERE source = ? AND kind = 'calls'`, [nodeId])?.c ?? 0);
+    const callerCount = (this.db.get(`SELECT COUNT(*) as c FROM edges WHERE target = ? AND kind = 'calls'`, [nodeId])?.c ?? 0);
+    const childCount = (this.db.get(`SELECT COUNT(*) as c FROM edges WHERE source = ? AND kind = 'contains'`, [nodeId])?.c ?? 0);
+    return { incomingEdgeCount, outgoingEdgeCount, callCount, callerCount, childCount };
+  }
+
   // ── Graph Analysis ─────────────────────────────────────────────────────────
 
   /**
    * Find symbols with no incoming edges (potential dead code).
+   * Excludes exported symbols since they may be consumed externally.
    */
   findDeadCode(limit = 50): Node[] {
     return this.db.all(
       `SELECT * FROM nodes
        WHERE kind IN ('function','method','class')
+         AND is_exported = 0
          AND id NOT IN (SELECT DISTINCT target FROM edges)
        LIMIT ?`,
       [limit]
@@ -383,24 +504,24 @@ export class GraphDatabase {
 
     const cycles: string[][] = [];
     const visited = new Set<string>();
-    const path: string[] = [];
-    const inPath = new Set<string>();
+    const pathSet = new Set<string>();
+    const pathArr: string[] = [];
 
     function dfs(node: string): void {
-      if (inPath.has(node)) {
-        const cycleStart = path.indexOf(node);
-        cycles.push(path.slice(cycleStart).concat(node));
+      if (pathSet.has(node)) {
+        const cycleStart = pathArr.indexOf(node);
+        cycles.push(pathArr.slice(cycleStart).concat(node));
         return;
       }
       if (visited.has(node)) return;
       visited.add(node);
-      inPath.add(node);
-      path.push(node);
+      pathSet.add(node);
+      pathArr.push(node);
       for (const neighbor of adj.get(node) ?? []) {
         dfs(neighbor);
       }
-      path.pop();
-      inPath.delete(node);
+      pathArr.pop();
+      pathSet.delete(node);
     }
 
     for (const node of adj.keys()) {
@@ -411,7 +532,7 @@ export class GraphDatabase {
   }
 
   /**
-   * Find the shortest path between two nodes via BFS over all edge kinds.
+   * Find the shortest path between two nodes via directed BFS (outgoing edges only).
    */
   findPath(fromId: string, toId: string, maxDepth = 10): Node[] {
     if (fromId === toId) {
@@ -429,11 +550,10 @@ export class GraphDatabase {
       depth++;
       for (let i = 0; i < levelSize; i++) {
         const current = queue.shift()!;
+        // Directed: only follow outgoing edges
         const rows = this.db.all(
-          `SELECT DISTINCT target as next FROM edges WHERE source = ?
-           UNION
-           SELECT DISTINCT source as next FROM edges WHERE target = ?`,
-          [current, current]
+          `SELECT DISTINCT target as next FROM edges WHERE source = ?`,
+          [current]
         );
         for (const row of rows) {
           if (!visited.has(row.next)) {
@@ -508,14 +628,21 @@ export class GraphDatabase {
   }
 
   // ── Stats ──────────────────────────────────────────────────────────────────
-  getStats(): { files: number; nodes: number; edges: number; nodesByKind: Record<string, number> } {
+
+  getStats(): GraphStats {
     const files = this.db.get('SELECT COUNT(*) as c FROM files').c;
     const nodes = this.db.get('SELECT COUNT(*) as c FROM nodes').c;
     const edges = this.db.get('SELECT COUNT(*) as c FROM edges').c;
     const kindRows = this.db.all('SELECT kind, COUNT(*) as c FROM nodes GROUP BY kind');
     const nodesByKind: Record<string, number> = {};
     for (const row of kindRows) nodesByKind[row.kind] = row.c;
-    return { files, nodes, edges, nodesByKind };
+    const langRows = this.db.all('SELECT language, COUNT(*) as c FROM files GROUP BY language');
+    const filesByLanguage: Record<string, number> = {};
+    for (const row of langRows) filesByLanguage[row.language] = row.c;
+    const dbPath = path.join(this.projectRoot, '.kirograph', 'kirograph.db');
+    let dbSizeBytes = 0;
+    try { dbSizeBytes = fs.statSync(dbPath).size; } catch { /* ignore */ }
+    return { files, nodes, edges, nodesByKind, filesByLanguage, dbSizeBytes };
   }
 
   // ── Transactions ──────────────────────────────────────────────────────────

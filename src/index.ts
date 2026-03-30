@@ -13,7 +13,37 @@ import { extractFile } from './extraction/extractor';
 import { detectLanguage } from './extraction/languages';
 import type {
   Node, Edge, NodeKind, IndexResult, IndexProgress, SyncResult, TaskContext, SearchResult,
+  SearchOptions, NodeContext, NodeMetrics,
 } from './types';
+
+// ── In-process Mutex ─────────────────────────────────────────────────────────
+
+class Mutex {
+  private queue: Array<() => void> = [];
+  private locked = false;
+
+  async acquire(): Promise<() => void> {
+    return new Promise(resolve => {
+      const tryAcquire = () => {
+        if (!this.locked) {
+          this.locked = true;
+          resolve(() => this.release());
+        } else {
+          this.queue.push(tryAcquire);
+        }
+      };
+      tryAcquire();
+    });
+  }
+
+  private release(): void {
+    this.locked = false;
+    const next = this.queue.shift();
+    if (next) next();
+  }
+}
+
+// ── File Tree ─────────────────────────────────────────────────────────────────
 
 export interface FileTreeNode {
   name: string;
@@ -78,9 +108,13 @@ const FILE_IO_BATCH_SIZE = 10;
 // Timeout after which a lock is considered stale (5 minutes)
 const LOCK_STALE_MS = 5 * 60 * 1000;
 
+// Sensitive directories that should not be used as project roots
+const SENSITIVE_DIRS = new Set(['/', '/etc', '/usr', '/var', '/bin', '/sbin', '/lib', '/lib64', '/proc', '/sys', '/dev', '/boot']);
+
 export interface KiroGraphConfig {
   version: number;
   languages: string[];
+  include: string[];
   exclude: string[];
   maxFileSize: number;
   extractDocstrings: boolean;
@@ -90,6 +124,7 @@ export interface KiroGraphConfig {
 const DEFAULT_CONFIG: KiroGraphConfig = {
   version: 1,
   languages: [],
+  include: [],
   exclude: ['node_modules/**', 'dist/**', 'build/**', '.git/**', '*.min.js', '.kirograph/**'],
   maxFileSize: 1_048_576,
   extractDocstrings: true,
@@ -103,6 +138,11 @@ const STOP_WORDS = new Set([
   'how','what','when','where','which','who','why','fix','bug','code','file',
   'files','function','method','class','type','build','run','test','a','an','in',
   'of','to','is','it','by','on','at','as','or','be','do','if','no','so','up',
+]);
+
+const FEATURE_REQUEST_WORDS = new Set([
+  'add','create','implement','build','make','new','feature','support','enable','allow',
+  'introduce','generate','write','develop','design','extend',
 ]);
 
 function extractTokens(query: string): string[] {
@@ -127,10 +167,16 @@ function extractTokens(query: string): string[] {
   return [...tokens];
 }
 
+function isFeatureRequest(task: string): boolean {
+  const words = task.toLowerCase().split(/\s+/);
+  return words.some(w => FEATURE_REQUEST_WORDS.has(w));
+}
+
 export default class KiroGraph {
   private db: GraphDatabase;
   private projectRoot: string;
   private config: KiroGraphConfig;
+  private mutex = new Mutex();
 
   private constructor(projectRoot: string, db: GraphDatabase, config: KiroGraphConfig) {
     this.projectRoot = projectRoot;
@@ -142,11 +188,12 @@ export default class KiroGraph {
 
   static async init(projectRoot: string, config?: Partial<KiroGraphConfig>): Promise<KiroGraph> {
     const resolved = path.resolve(projectRoot);
+    validateProjectPath(resolved);
     const dir = path.join(resolved, KIROGRAPH_DIR);
     fs.mkdirSync(dir, { recursive: true });
 
     const cfg = { ...DEFAULT_CONFIG, ...config };
-    fs.writeFileSync(path.join(dir, CONFIG_FILE), JSON.stringify(cfg, null, 2));
+    writeConfigAtomic(path.join(dir, CONFIG_FILE), cfg);
 
     const db = new GraphDatabase(resolved);
     return new KiroGraph(resolved, db, cfg);
@@ -154,6 +201,7 @@ export default class KiroGraph {
 
   static async open(projectRoot: string): Promise<KiroGraph> {
     const resolved = path.resolve(projectRoot);
+    validateProjectPath(resolved);
     const dir = path.join(resolved, KIROGRAPH_DIR);
     if (!fs.existsSync(dir)) throw new Error(`KiroGraph not initialized at ${resolved}. Run: kirograph init`);
 
@@ -241,6 +289,7 @@ export default class KiroGraph {
   // ── Indexing ───────────────────────────────────────────────────────────────
 
   async indexAll(opts?: { onProgress?: (p: IndexProgress) => void; force?: boolean }): Promise<IndexResult> {
+    const release = await this.mutex.acquire();
     this.acquireLock();
     const start = Date.now();
     const errors: string[] = [];
@@ -305,8 +354,8 @@ export default class KiroGraph {
               this.db.insertEdge(edge);
               edgesCreated++;
             }
-            for (const ref of extracted.unresolvedCalls) {
-              this.db.insertUnresolvedRef(ref.sourceId, ref.calleeName, 'function', extracted.filePath, ref.line, ref.column);
+            for (const ref of extracted.unresolvedRefs) {
+              this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column);
             }
           });
 
@@ -316,19 +365,21 @@ export default class KiroGraph {
         }
       }
 
-      // Resolve cross-file call edges
+      // Resolve cross-file references (calls + imports)
       opts?.onProgress?.({ phase: 'resolving', current: 0, total: 1 });
-      const resolved = this.db.resolveCallEdges();
+      const resolved = this.db.resolveUnresolvedRefs();
       edgesCreated += resolved;
 
       this.clearDirty();
       return { success: errors.length === 0, filesIndexed, nodesCreated, edgesCreated, errors, duration: Date.now() - start };
     } finally {
       this.releaseLock();
+      release();
     }
   }
 
   async sync(changedFiles?: string[]): Promise<SyncResult> {
+    const release = await this.mutex.acquire();
     this.acquireLock();
     const start = Date.now();
     const result: SyncResult = { added: [], modified: [], removed: [], nodesCreated: 0, nodesRemoved: 0, errors: [], duration: 0 };
@@ -402,8 +453,8 @@ export default class KiroGraph {
             for (const edge of extracted.edges) {
               this.db.insertEdge(edge);
             }
-            for (const ref of extracted.unresolvedCalls) {
-              this.db.insertUnresolvedRef(ref.sourceId, ref.calleeName, 'function', extracted.filePath, ref.line, ref.column);
+            for (const ref of extracted.unresolvedRefs) {
+              this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column);
             }
           });
 
@@ -414,22 +465,31 @@ export default class KiroGraph {
         }
       }
 
-      // Re-resolve call edges for changed files
-      this.db.resolveCallEdges();
+      // Re-resolve references for changed files
+      this.db.resolveUnresolvedRefs();
 
       this.clearDirty();
       result.duration = Date.now() - start;
       return result;
     } finally {
       this.releaseLock();
+      release();
     }
   }
 
   // ── Query API ──────────────────────────────────────────────────────────────
 
-  searchNodes(query: string, kind?: NodeKind, limit = 20): SearchResult[] {
+  searchNodes(query: string, kindOrOpts?: NodeKind | SearchOptions, limit = 20): SearchResult[] {
+    // Normalize overloaded signature
+    let opts: SearchOptions;
+    if (typeof kindOrOpts === 'string') {
+      opts = { kinds: [kindOrOpts as NodeKind], limit };
+    } else {
+      opts = { limit, ...kindOrOpts };
+    }
+
     // Try exact name match first (highest precision)
-    const exact = this.db.findNodesByExactName(query, kind, limit);
+    const exact = this.db.findNodesByExactName(query, opts.kinds, opts.limit);
     if (exact.length > 0) {
       return exact.map(n => ({ node: n, score: 1, matchType: 'exact' as const }));
     }
@@ -437,12 +497,12 @@ export default class KiroGraph {
     // Try FTS, fall back to LIKE
     let nodes: Node[] = [];
     try {
-      nodes = this.db.searchNodes(query, kind, limit);
+      nodes = this.db.searchNodes(query, opts);
     } catch {
-      nodes = this.db.searchNodesByName(query, kind, limit);
+      nodes = this.db.searchNodesByName(query, opts);
     }
     if (nodes.length === 0) {
-      nodes = this.db.searchNodesByName(query, kind, limit);
+      nodes = this.db.searchNodesByName(query, opts);
     }
     return nodes.map(n => ({ node: n, score: 1, matchType: 'fuzzy' as const }));
   }
@@ -479,8 +539,17 @@ export default class KiroGraph {
     return this.db.getNode(id);
   }
 
+  getNodeContext(nodeId: string): NodeContext | null {
+    return this.db.getNodeContext(nodeId);
+  }
+
+  getNodeMetrics(nodeId: string): NodeMetrics {
+    return this.db.getNodeMetrics(nodeId);
+  }
+
   getNodeSource(node: Node): string | null {
-    const absPath = path.join(this.projectRoot, node.filePath);
+    const absPath = validatePathWithinRoot(path.join(this.projectRoot, node.filePath), this.projectRoot);
+    if (!absPath) return null;
     try {
       const lines = fs.readFileSync(absPath, 'utf8').split('\n');
       return lines.slice(node.startLine - 1, node.endLine).join('\n');
@@ -492,6 +561,7 @@ export default class KiroGraph {
   async buildContext(task: string, opts?: { maxNodes?: number; includeCode?: boolean }): Promise<TaskContext> {
     const maxNodes = opts?.maxNodes ?? 20;
     const includeCode = opts?.includeCode ?? true;
+    const featureRequest = isFeatureRequest(task);
 
     // Extract candidate symbol tokens from the task description
     const tokens = extractTokens(task);
@@ -531,13 +601,17 @@ export default class KiroGraph {
       }
     }
 
+    const hint = featureRequest
+      ? ' (feature request — showing existing patterns and extension points)'
+      : '';
+
     return {
       task,
       entryPoints,
       relatedNodes: [...relatedSet.values()],
       edges,
       codeSnippets,
-      summary: `Found ${entryPoints.length} entry points and ${relatedSet.size} related symbols for: "${task}"`,
+      summary: `Found ${entryPoints.length} entry points and ${relatedSet.size} related symbols for: "${task}"${hint}`,
     };
   }
 
@@ -633,8 +707,13 @@ export default class KiroGraph {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const picomatch = require('picomatch');
       const excludeMatchers = this.buildExcludeMatchers(picomatch);
+      const includeMatcher = this.buildIncludeMatcher(picomatch);
       return relPaths
-        .filter(rel => !excludeMatchers.some((m: (s: string) => boolean) => m(rel) || m(rel + '/')))
+        .filter(rel => {
+          if (excludeMatchers.some((m: (s: string) => boolean) => m(rel) || m(rel + '/'))) return false;
+          if (includeMatcher && !includeMatcher(rel)) return false;
+          return true;
+        })
         .map(rel => path.join(this.projectRoot, rel))
         .filter(abs => {
           const lang = detectLanguage(abs);
@@ -654,6 +733,7 @@ export default class KiroGraph {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const picomatch = require('picomatch');
     const excludeMatchers = this.buildExcludeMatchers(picomatch);
+    const includeMatcher = this.buildIncludeMatcher(picomatch);
     const results: string[] = [];
     const visitedDirs = new Set<string>();
 
@@ -676,6 +756,7 @@ export default class KiroGraph {
         if (entry.isDirectory()) {
           walk(full);
         } else if (entry.isFile()) {
+          if (includeMatcher && !includeMatcher(rel)) continue;
           const lang = detectLanguage(full);
           if (lang !== 'unknown') results.push(full);
         }
@@ -699,6 +780,12 @@ export default class KiroGraph {
     }
 
     return patterns.map((p: string) => picomatch(p));
+  }
+
+  private buildIncludeMatcher(picomatch: any): ((s: string) => boolean) | null {
+    if (!this.config.include || this.config.include.length === 0) return null;
+    const matchers = this.config.include.map((p: string) => picomatch(p));
+    return (s: string) => matchers.some((m: (s: string) => boolean) => m(s));
   }
 
   /**
@@ -736,6 +823,31 @@ export default class KiroGraph {
       return null;
     }
   }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Resolve and validate that filePath is within root. Returns null if not. */
+function validatePathWithinRoot(filePath: string, root: string): string | null {
+  const resolved = path.resolve(filePath);
+  const resolvedRoot = path.resolve(root);
+  if (!resolved.startsWith(resolvedRoot + path.sep) && resolved !== resolvedRoot) return null;
+  return resolved;
+}
+
+/** Throw if the given path is a sensitive system directory. */
+function validateProjectPath(projectRoot: string): void {
+  const resolved = path.resolve(projectRoot);
+  if (SENSITIVE_DIRS.has(resolved)) {
+    throw new Error(`Refusing to initialize KiroGraph in sensitive directory: ${resolved}`);
+  }
+}
+
+/** Atomically write JSON config: write to .tmp then rename. */
+function writeConfigAtomic(configPath: string, config: KiroGraphConfig): void {
+  const tmp = configPath + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(config, null, 2));
+  fs.renameSync(tmp, configPath);
 }
 
 /**
