@@ -7,6 +7,7 @@ import { Command } from 'commander';
 import * as path from 'path';
 import * as fs from 'fs';
 import { printBanner } from '../banner';
+import { renderIndexProgress } from '../utils';
 
 const program = new Command();
 
@@ -17,7 +18,7 @@ program
   .addHelpCommand(true)
   .hook('preAction', (thisCommand) => {
     const name = thisCommand.name();
-    if (name === 'install' || name === 'init') printBanner();
+    if (name === 'init') printBanner();
   });
 
 // ── init ──────────────────────────────────────────────────────────────────────
@@ -39,7 +40,7 @@ program
       console.log('Indexing...');
       const result = await cg.indexAll({
         force: true,
-        onProgress: p => process.stdout.write(`\r  ${p.phase} ${p.current}/${p.total}   `),
+        onProgress: renderIndexProgress,
       });
       process.stdout.write('\n');
       console.log(`Done. ${result.filesIndexed} files, ${result.nodesCreated} symbols, ${result.edgesCreated} edges.`);
@@ -105,7 +106,7 @@ program
     const cg = await KiroGraph.open(target);
     const result = await cg.indexAll({
       force: opts.force,
-      onProgress: p => process.stdout.write(`\r  ${p.phase} ${p.current}/${p.total}   `),
+      onProgress: renderIndexProgress,
     });
     process.stdout.write('\n');
     console.log(`Indexed ${result.filesIndexed} files, ${result.nodesCreated} symbols in ${result.duration}ms`);

@@ -115,10 +115,11 @@ export interface TaskContext {
 }
 
 export interface IndexProgress {
-  phase: 'scanning' | 'parsing' | 'storing' | 'resolving';
+  phase: 'scanning' | 'parsing' | 'storing' | 'resolving' | 'detecting frameworks' | 'embeddings';
   current: number;
   total: number;
   currentFile?: string;
+  meta?: Record<string, unknown>;
 }
 
 export interface IndexResult {

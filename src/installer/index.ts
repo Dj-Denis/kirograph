@@ -11,8 +11,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { logWarn } from '../errors';
+import { printBanner } from '../banner';
+import { renderIndexProgress } from '../utils';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+const violet = '\x1b[38;5;99m';
+const reset  = '\x1b[0m';
+const dim    = '\x1b[2m';
 
 function ask(rl: readline.Interface, question: string): Promise<string> {
   return new Promise(resolve => rl.question(question, resolve));
@@ -28,6 +34,86 @@ function readJson(p: string): any {
 
 function writeJson(p: string, data: unknown): void {
   fs.writeFileSync(p, JSON.stringify(data, null, 2) + '\n');
+}
+
+/**
+ * Prompt a yes/no question, re-prompting on invalid input.
+ * Accepts: "" (use default), "y", "Y", "n", "N".
+ */
+async function askBool(
+  rl: readline.Interface,
+  question: string,
+  description: string,
+  defaultYes = true,
+): Promise<boolean> {
+  const hint = defaultYes ? 'Y/n' : 'y/N';
+  console.log(`\n  ${dim}${description}${reset}`);
+  while (true) {
+    const raw = await ask(rl, `  ${violet}${question}${reset} ${dim}(${hint})${reset} `);
+    if (raw === '') return defaultYes;
+    if (raw === 'y' || raw === 'Y') return true;
+    if (raw === 'n' || raw === 'N') return false;
+    console.log(`  Please enter y or n.`);
+  }
+}
+
+/**
+ * Prompt for a string value, returning the default on empty input.
+ */
+async function askString(
+  rl: readline.Interface,
+  question: string,
+  description: string,
+  defaultValue: string,
+): Promise<string> {
+  console.log(`\n  ${dim}${description}${reset}`);
+  const raw = await ask(rl, `  ${violet}${question}${reset} ${dim}(${defaultValue})${reset} `);
+  return raw === '' ? defaultValue : raw;
+}
+
+// ── Config Options ────────────────────────────────────────────────────────────
+
+import { KiroGraphConfig, updateConfig } from '../config';
+
+type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'extractDocstrings' | 'trackCallSites'> & { embeddingModel?: string };
+
+const DEFAULT_EMBEDDING_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
+
+async function promptConfigOptions(rl: readline.Interface): Promise<ConfigPatch> {
+  const enableEmbeddings = await askBool(
+    rl,
+    'Enable semantic embeddings for similarity search? (requires a local embedding model)',
+    'Enables semantic/similarity-based code search. Increases indexing time and requires a compatible local embedding model (e.g. via Ollama).',
+  );
+
+  const patch: ConfigPatch = { enableEmbeddings, extractDocstrings: true, trackCallSites: true };
+
+  if (enableEmbeddings) {
+    const embeddingModel = await askString(
+      rl,
+      'Embedding model identifier',
+      'The model identifier must match a model available in your local Ollama or compatible inference server.',
+      DEFAULT_EMBEDDING_MODEL,
+    );
+    patch.embeddingModel = embeddingModel;
+    if (embeddingModel !== DEFAULT_EMBEDDING_MODEL) {
+      console.log(`\n  ℹ  To use this model locally, run: ollama pull ${embeddingModel}`);
+    }
+  }
+
+  patch.extractDocstrings = await askBool(
+    rl,
+    'Extract docstrings from source files?',
+    'Enriches symbol metadata and improves context quality. Slightly increases indexing time.',
+  );
+
+  patch.trackCallSites = await askBool(
+    rl,
+    'Track call sites to enable caller/callee graph traversal?',
+    'Enables the kirograph_callers and kirograph_callees MCP tools for graph traversal. Increases index size.',
+  );
+
+  return patch;
 }
 
 // ── MCP Config ────────────────────────────────────────────────────────────────
@@ -247,7 +333,7 @@ function writeSteering(kiroDir: string): void {
 // ── Main Installer ────────────────────────────────────────────────────────────
 
 export async function runInstaller(): Promise<void> {
-  console.log('\n  KiroGraph Installer\n');
+  printBanner();
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
@@ -271,7 +357,24 @@ export async function runInstaller(): Promise<void> {
     // 3. Steering
     writeSteering(kiroDir);
 
-    // 4. Optionally init + index
+    // 4. Prompt for config options and persist
+    const patch = await promptConfigOptions(rl);
+    try {
+      await updateConfig(cwd, patch);
+      console.log(`\n  Configuration saved to ${cwd}/.kirograph/config.json`);
+      console.log(`  • enableEmbeddings: ${patch.enableEmbeddings}`);
+      if ('embeddingModel' in patch) {
+        console.log(`  • embeddingModel: ${patch.embeddingModel}`);
+      }
+      console.log(`  • extractDocstrings: ${patch.extractDocstrings}`);
+      console.log(`  • trackCallSites: ${patch.trackCallSites}`);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.error(`\n  ✗ Failed to write configuration: ${reason}`);
+      process.exit(1);
+    }
+
+    // 5. Optionally init + index
     const doIndex = await ask(rl, '\n  Initialize and index this project now? (Y/n) ');
     if (doIndex.toLowerCase() !== 'n') {
       const KiroGraph = (await import('../index')).default;
@@ -282,7 +385,7 @@ export async function runInstaller(): Promise<void> {
       const cg = await KiroGraph.open(cwd);
       console.log('  Indexing...');
       const result = await cg.indexAll({
-        onProgress: p => process.stdout.write(`\r    ${p.phase} ${p.current}/${p.total}   `),
+        onProgress: renderIndexProgress,
       });
       process.stdout.write('\n');
       console.log(`  ✓ Indexed ${result.filesIndexed} files, ${result.nodesCreated} symbols, ${result.edgesCreated} edges`);
