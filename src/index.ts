@@ -116,7 +116,7 @@ export default class KiroGraph {
     this.config = config;
     this.queryManager = new GraphQueryManager(db);
     this.resolver = new ReferenceResolver(db, config);
-    this.vectors = new VectorManager(db, config);
+    this.vectors = new VectorManager(db, config, projectRoot);
     this.contextBuilder = new ContextBuilder(db, this.resolver, this.vectors);
   }
 

@@ -10,6 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
+import { spawnSync } from 'child_process';
 import { logWarn } from '../errors';
 import { printBanner } from '../banner';
 import { renderIndexProgress } from '../utils';
@@ -75,7 +76,7 @@ async function askString(
 
 import { KiroGraphConfig, updateConfig } from '../config';
 
-type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'extractDocstrings' | 'trackCallSites'> & { embeddingModel?: string };
+type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'extractDocstrings' | 'trackCallSites'> & { embeddingModel?: string };
 
 const DEFAULT_EMBEDDING_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
 
@@ -86,19 +87,34 @@ async function promptConfigOptions(rl: readline.Interface): Promise<ConfigPatch>
     'Enables semantic/similarity-based code search. Increases indexing time and requires a compatible local embedding model (e.g. via Ollama).',
   );
 
-  const patch: ConfigPatch = { enableEmbeddings, extractDocstrings: true, trackCallSites: true };
+  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, extractDocstrings: true, trackCallSites: true };
 
   if (enableEmbeddings) {
-    const embeddingModel = await askString(
-      rl,
-      'Embedding model identifier',
-      'The model identifier must match a model available in your local Ollama or compatible inference server.',
-      DEFAULT_EMBEDDING_MODEL,
-    );
+    console.log(`\n  ${dim}HuggingFace model identifier for generating embeddings (e.g. org/model-name).${reset}`);
+    console.log(`  ${dim}Press Enter to use the default: ${DEFAULT_EMBEDDING_MODEL}${reset}`);
+    let embeddingModel = DEFAULT_EMBEDDING_MODEL;
+    while (true) {
+      const raw = (await ask(rl, `  ${violet}Embedding model identifier:${reset} `)).trim();
+      if (raw === '') { embeddingModel = DEFAULT_EMBEDDING_MODEL; break; }
+      if (raw.includes('/')) { embeddingModel = raw; break; }
+      console.log(`  Expected a HuggingFace model ID in the format org/model-name (e.g. nomic-ai/nomic-embed-text-v1.5).`);
+    }
     patch.embeddingModel = embeddingModel;
     if (embeddingModel !== DEFAULT_EMBEDDING_MODEL) {
       console.log(`\n  ℹ  To use this model locally, run: ollama pull ${embeddingModel}`);
     }
+
+    patch.useVecIndex = await askBool(
+      rl,
+      'Use sqlite-vec ANN index for semantic search?',
+      'By default semantic search scans all embeddings in-process (cosine similarity over a Float32Array). ' +
+      'This is simple and dependency-free, but scales linearly with the number of indexed symbols.\n' +
+      '  Enabling sqlite-vec switches to an approximate nearest-neighbour (ANN) index stored in ' +
+      '.kirograph/vec.db, making search sub-linear at the cost of two extra native dependencies.\n' +
+      '  Choose yes for large codebases (thousands of indexed symbols); keep the default for small/medium projects.\n' +
+      '  Requires: npm install better-sqlite3 sqlite-vec',
+      false,
+    );
   }
 
   patch.extractDocstrings = await askBool(
@@ -365,6 +381,22 @@ export async function runInstaller(): Promise<void> {
       console.log(`  • enableEmbeddings: ${patch.enableEmbeddings}`);
       if ('embeddingModel' in patch) {
         console.log(`  • embeddingModel: ${patch.embeddingModel}`);
+      }
+      if (patch.enableEmbeddings) {
+        console.log(`  • useVecIndex: ${patch.useVecIndex}`);
+        if (patch.useVecIndex) {
+          console.log(`\n  Installing sqlite-vec dependencies...`);
+          const result = spawnSync('npm', ['install', 'better-sqlite3', 'sqlite-vec'], {
+            stdio: 'inherit',
+            shell: true,
+          });
+          if (result.status === 0) {
+            console.log(`  ✓ better-sqlite3 and sqlite-vec installed`);
+          } else {
+            console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
+            console.warn(`    npm install better-sqlite3 sqlite-vec`);
+          }
+        }
       }
       console.log(`  • extractDocstrings: ${patch.extractDocstrings}`);
       console.log(`  • trackCallSites: ${patch.trackCallSites}`);

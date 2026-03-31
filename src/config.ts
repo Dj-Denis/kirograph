@@ -23,6 +23,7 @@ export interface KiroGraphConfig {
   // Parity fields:
   enableEmbeddings: boolean;
   embeddingModel: string;
+  useVecIndex: boolean;
   minLogLevel: 'debug' | 'info' | 'warn' | 'error';
   frameworkHints: string[];
   fuzzyResolutionThreshold: number; // 0.0–1.0
@@ -35,7 +36,7 @@ const CONFIG_FILE = 'config.json';
 
 const KNOWN_FIELDS = new Set<string>([
   'version', 'languages', 'include', 'exclude', 'maxFileSize',
-  'extractDocstrings', 'trackCallSites', 'enableEmbeddings', 'embeddingModel',
+  'extractDocstrings', 'trackCallSites', 'enableEmbeddings', 'embeddingModel', 'useVecIndex',
   'minLogLevel', 'frameworkHints', 'fuzzyResolutionThreshold',
 ]);
 
@@ -69,6 +70,7 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     trackCallSites: true,
     enableEmbeddings: false,
     embeddingModel: 'nomic-ai/nomic-embed-text-v1.5',
+    useVecIndex: false,
     minLogLevel: 'warn',
     frameworkHints: [],
     fuzzyResolutionThreshold: 0.5,
@@ -113,6 +115,9 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const embeddingModel = typeof raw.embeddingModel === 'string' && raw.embeddingModel.length > 0
     ? raw.embeddingModel
     : defaults.embeddingModel;
+  const useVecIndex = typeof raw.useVecIndex === 'boolean'
+    ? raw.useVecIndex
+    : defaults.useVecIndex;
   const minLogLevel = typeof raw.minLogLevel === 'string' && LOG_LEVELS.has(raw.minLogLevel)
     ? (raw.minLogLevel as KiroGraphConfig['minLogLevel'])
     : defaults.minLogLevel;
@@ -139,6 +144,7 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     trackCallSites,
     enableEmbeddings,
     embeddingModel,
+    useVecIndex,
     minLogLevel,
     frameworkHints,
     fuzzyResolutionThreshold,

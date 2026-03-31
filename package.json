@@ -37,6 +37,10 @@
     "tree-sitter-wasms": "^0.1.11",
     "web-tree-sitter": "^0.25.3"
   },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.10.0",
+    "sqlite-vec": "^0.1.9"
+  },
   "devDependencies": {
     "@types/figlet": "^1.7.0",
     "@types/node": "^20.0.0",

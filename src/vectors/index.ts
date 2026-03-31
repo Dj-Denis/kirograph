@@ -5,7 +5,9 @@
  * Mirrors CodeGraph src/vectors/ (embedder.ts + manager.ts) adapted for KiroGraph:
  *   - Cache dir: ~/.kirograph/models/ (not ~/.codegraph/models/)
  *   - Embeddings stored in the `vectors` SQLite table
- *   - Cosine similarity search done in-process (no sqlite-vss dependency)
+ *   - Cosine similarity search done in-process by default (no extra deps)
+ *   - ANN search via sqlite-vec opt-in: set config.useVecIndex = true
+ *     (requires `npm install better-sqlite3 sqlite-vec`)
  *   - Disabled by default; opt-in via config.enableEmbeddings = true
  */
 
@@ -16,6 +18,7 @@ import { logDebug, logWarn, logError } from '../errors';
 import type { KiroGraphConfig } from '../config';
 import type { Node } from '../types';
 import type { GraphDatabase } from '../db/database';
+import { VecIndex } from './vec-index';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -83,10 +86,12 @@ function toFloat32Array(data: unknown): Float32Array {
 export class VectorManager {
   private pipeline: Pipeline | null = null;
   private _initialized = false;
+  private vecIndex: VecIndex | null = null;
 
   constructor(
     private readonly db: GraphDatabase,
-    private readonly config: KiroGraphConfig
+    private readonly config: KiroGraphConfig,
+    private readonly projectRoot?: string,
   ) {}
 
   isInitialized(): boolean {
@@ -96,6 +101,7 @@ export class VectorManager {
   /**
    * Load the embedding model. No-op when embeddings are disabled.
    * Fails silently so callers can continue without semantic search.
+   * When config.useVecIndex is true, also initializes the sqlite-vec ANN index.
    */
   async initialize(): Promise<void> {
     if (!this.config.enableEmbeddings) {
@@ -104,7 +110,12 @@ export class VectorManager {
     }
     if (this._initialized) return;
 
-    const modelId = this.config.embeddingModel || DEFAULT_MODEL;
+    const rawModel = this.config.embeddingModel || DEFAULT_MODEL;
+    // Guard against an invalid model ID (e.g. 'y' typed by mistake in the installer)
+    const modelId = rawModel.includes('/') ? rawModel : DEFAULT_MODEL;
+    if (rawModel !== modelId) {
+      logWarn(`VectorManager: invalid embeddingModel "${rawModel}", using default instead`, { default: DEFAULT_MODEL });
+    }
     const cacheDir = GLOBAL_MODELS_DIR;
 
     try {
@@ -128,6 +139,19 @@ export class VectorManager {
         error: String(err),
       });
       this._initialized = false;
+      return;
+    }
+
+    // Initialize sqlite-vec ANN index when opted in
+    if (this.config.useVecIndex && this.projectRoot) {
+      const kirographDir = path.join(this.projectRoot, '.kirograph');
+      this.vecIndex = new VecIndex(kirographDir, EMBEDDING_DIM);
+      await this.vecIndex.initialize();
+      if (this.vecIndex.isAvailable()) {
+        logDebug('VectorManager: sqlite-vec ANN index ready');
+      } else {
+        logDebug('VectorManager: sqlite-vec unavailable, using in-process cosine search');
+      }
     }
   }
 
@@ -148,6 +172,7 @@ export class VectorManager {
       const output = await this.pipeline(text, { pooling: 'mean', normalize: true });
       const embedding = toFloat32Array(output.data);
       this.db.storeEmbedding(node.id, embedding, this.config.embeddingModel || DEFAULT_MODEL);
+      this.vecIndex?.upsert(node.id, embedding);
     } catch (err) {
       logWarn('Failed to embed node', { nodeId: node.id, error: String(err) });
     }
@@ -182,6 +207,7 @@ export class VectorManager {
           const node = batch[j]!;
           const embedding = flat.slice(j * dim, (j + 1) * dim);
           this.db.storeEmbedding(node.id, embedding, modelId);
+          this.vecIndex?.upsert(node.id, embedding);
         }
       } catch (err) {
         logWarn('VectorManager: batch embedding failed', { batchStart: i, error: String(err) });
@@ -195,7 +221,12 @@ export class VectorManager {
   }
 
   /**
-   * Semantic search: embed the query and return top-N nodes by cosine similarity.
+   * Semantic search: embed the query and return top-N nodes by similarity.
+   *
+   * When sqlite-vec is available (useVecIndex: true), delegates ANN search to
+   * VecIndex (fast, sub-linear). Otherwise falls back to in-process cosine
+   * similarity over all stored embeddings (linear scan, no extra deps).
+   *
    * Returns empty array when not initialized.
    */
   async search(query: string, topN = 10): Promise<Node[]> {
@@ -206,15 +237,24 @@ export class VectorManager {
       const output = await this.pipeline(text, { pooling: 'mean', normalize: true });
       const queryVec = toFloat32Array(output.data);
 
-      const allEmbeddings = this.db.getAllEmbeddings();
-      const scored = allEmbeddings
-        .map(({ nodeId, embedding }) => ({ nodeId, score: cosine(queryVec, embedding) }))
-        .filter(r => r.score >= 0.3)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, topN);
+      let nodeIds: string[];
+
+      if (this.vecIndex?.isAvailable()) {
+        // ANN search via sqlite-vec — fast, sub-linear
+        nodeIds = this.vecIndex.search(queryVec, topN);
+      } else {
+        // In-process cosine similarity — linear scan over all stored embeddings
+        const allEmbeddings = this.db.getAllEmbeddings();
+        nodeIds = allEmbeddings
+          .map(({ nodeId, embedding }) => ({ nodeId, score: cosine(queryVec, embedding) }))
+          .filter(r => r.score >= 0.3)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, topN)
+          .map(r => r.nodeId);
+      }
 
       const results: Node[] = [];
-      for (const { nodeId } of scored) {
+      for (const nodeId of nodeIds) {
         const node = this.db.getNode(nodeId);
         if (node) results.push(node);
       }
