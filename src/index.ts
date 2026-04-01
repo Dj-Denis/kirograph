@@ -627,8 +627,13 @@ export default class KiroGraph {
       useVecIndex: this.config.useVecIndex ?? false,
       semanticEngine: this.config.semanticEngine ?? 'cosine',
       vecIndexCount: await this.vectors.vecIndexCount(),
+      engineFallback: this.vectors.getEngineFallback(),
       frameworks: this.config.frameworkHints ?? [],
     };
+  }
+
+  getEngineFallback(): string | null {
+    return this.vectors.getEngineFallback();
   }
 
   getProjectRoot(): string {

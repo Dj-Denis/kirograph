@@ -106,6 +106,7 @@ export interface GraphStats {
   useVecIndex: boolean;
   semanticEngine: 'cosine' | 'sqlite-vec' | 'orama' | 'pglite';
   vecIndexCount: number;
+  engineFallback: string | null;
   frameworks: string[];
 }
 

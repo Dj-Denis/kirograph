@@ -71,6 +71,8 @@ program
       process.stdout.write('\n');
       console.log(`Done. ${result.filesIndexed} files, ${result.nodesCreated} symbols, ${result.edgesCreated} edges.`);
       if (result.errors.length) console.warn(`Warnings: ${result.errors.length}`);
+      const fallback = cg.getEngineFallback();
+      if (fallback) console.warn(`\x1b[33m⚠ Engine fallback: ${fallback}\x1b[0m`);
       cg.close();
     }
   });
@@ -145,6 +147,8 @@ program
     });
     process.stdout.write('\n');
     console.log(`Indexed ${result.filesIndexed} files, ${result.nodesCreated} symbols in ${result.duration}ms`);
+    const fallback = cg.getEngineFallback();
+    if (fallback) console.warn(`\x1b[33m⚠ Engine fallback: ${fallback}\x1b[0m`);
     cg.close();
   });
 
@@ -159,6 +163,8 @@ program
     const cg = await KiroGraph.open(target);
     const result = await cg.sync(opts.files);
     console.log(`Sync: +${result.added.length} ~${result.modified.length} -${result.removed.length} (${result.duration}ms)`);
+    const fallback = cg.getEngineFallback();
+    if (fallback) console.warn(`\x1b[33m⚠ Engine fallback: ${fallback}\x1b[0m`);
     cg.close();
   });
 
@@ -206,6 +212,9 @@ program
       console.log(`  ${label('Status')}     ${green}${bold}enabled${reset}`);
       console.log(`  ${label('Model')}      ${value(stats.embeddingModel)}`);
       console.log(`  ${label('Engine')}     ${violet}${engineLabel}${reset}`);
+      if (stats.engineFallback) {
+        console.log(`  ${'\x1b[33m'}⚠ engine fallback: ${stats.engineFallback}${reset}`);
+      }
       console.log(`  ${label('Indexed')}    ${value(`${stats.embeddingCount} / ${stats.nodes}`)}  ${dim}(${coverage}%)${reset}`);
     } else {
       console.log(`  ${label('Status')}     ${dim}disabled${reset}`);

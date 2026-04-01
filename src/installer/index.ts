@@ -25,6 +25,86 @@ function ask(rl: readline.Interface, question: string): Promise<string> {
   return new Promise(resolve => rl.question(question, resolve));
 }
 
+/**
+ * Interactive arrow-key selection menu.
+ * Temporarily pauses the readline interface to take over raw stdin,
+ * then resumes it when done so subsequent prompts work normally.
+ */
+async function arrowSelect<T>(
+  rl: readline.Interface,
+  label: string,
+  options: Array<{ value: T; label: string; description: string }>,
+  defaultIndex = 0,
+): Promise<T> {
+  const bold  = '\x1b[1m';
+  const green = '\x1b[32m';
+
+  const CURSOR_UP   = '\x1b[A';
+  const CURSOR_DOWN = '\x1b[B';
+  const CLEAR_LINE  = '\x1b[2K\x1b[G';
+
+  let selected = defaultIndex;
+
+  function render(first: boolean) {
+    if (!first) {
+      // Move cursor up by options.length + 1 (description line)
+      process.stdout.write(`\x1b[${options.length + 1}A`);
+    }
+    for (let i = 0; i < options.length; i++) {
+      const active = i === selected;
+      const cursor = active ? `${green}${bold}❯${reset}` : ' ';
+      const text   = active ? `${bold}${options[i]!.label}${reset}` : `${dim}${options[i]!.label}${reset}`;
+      process.stdout.write(`${CLEAR_LINE}  ${cursor} ${text}\n`);
+    }
+    const desc = options[selected]!.description;
+    process.stdout.write(`${CLEAR_LINE}  ${dim}${desc}${reset}\n`);
+  }
+
+  return new Promise(resolve => {
+    console.log(`\n  ${violet}${label}${reset}`);
+    render(true);
+
+    rl.pause();
+    const stdin = process.stdin;
+    const wasTTY = stdin.isTTY;
+    if (wasTTY) stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+
+    function onData(key: string) {
+      if (key === CURSOR_UP || key === '\x1b[A') {
+        selected = (selected - 1 + options.length) % options.length;
+        render(false);
+      } else if (key === CURSOR_DOWN || key === '\x1b[B') {
+        selected = (selected + 1) % options.length;
+        render(false);
+      } else if (key === '\r' || key === '\n' || key === ' ') {
+        stdin.removeListener('data', onData);
+        if (wasTTY) stdin.setRawMode(false);
+        stdin.pause();
+        rl.resume();
+        // Print final selection
+        process.stdout.write(`\x1b[${options.length + 1}A`);
+        for (let i = 0; i < options.length; i++) {
+          const active = i === selected;
+          const cursor = active ? `${green}${bold}❯${reset}` : ' ';
+          const text   = active ? `${green}${bold}${options[i]!.label}${reset}` : `${dim}${options[i]!.label}${reset}`;
+          process.stdout.write(`${CLEAR_LINE}  ${cursor} ${text}\n`);
+        }
+        process.stdout.write(`${CLEAR_LINE}\n`);
+        resolve(options[selected]!.value);
+      } else if (key === '\x03') {
+        // Ctrl-C
+        stdin.removeListener('data', onData);
+        if (wasTTY) stdin.setRawMode(false);
+        process.exit(1);
+      }
+    }
+
+    stdin.on('data', onData);
+  });
+}
+
 function ensureDir(p: string): void {
   fs.mkdirSync(p, { recursive: true });
 }
@@ -106,20 +186,12 @@ async function promptConfigOptions(rl: readline.Interface): Promise<ConfigPatch>
     }
 
     // Engine selection
-    console.log(`\n  ${dim}Choose the semantic search engine:${reset}`);
-    console.log(`  ${dim}  1) cosine     — in-process cosine similarity. No extra deps. Best for small/medium projects.${reset}`);
-    console.log(`  ${dim}  2) sqlite-vec — ANN index. Sub-linear search. Best for large codebases. Needs native deps (better-sqlite3, sqlite-vec).${reset}`);
-    console.log(`  ${dim}  3) orama      — Hybrid search (full-text + vector). Pure JS. Needs @orama/orama, @orama/plugin-data-persistence.${reset}`);
-    console.log(`  ${dim}  4) pglite     — Hybrid search via PostgreSQL + pgvector. Exact results. Pure WASM. Needs @electric-sql/pglite.${reset}`);
-    let semanticEngine: SemanticEngine = 'cosine';
-    while (true) {
-      const raw = (await ask(rl, `  ${violet}Engine [1/2/3/4]:${reset} ${dim}(1)${reset} `)).trim();
-      if (raw === '' || raw === '1') { semanticEngine = 'cosine'; break; }
-      if (raw === '2') { semanticEngine = 'sqlite-vec'; break; }
-      if (raw === '3') { semanticEngine = 'orama'; break; }
-      if (raw === '4') { semanticEngine = 'pglite'; break; }
-      console.log(`  Please enter 1, 2, 3, or 4.`);
-    }
+    const semanticEngine = await arrowSelect<SemanticEngine>(rl, 'Choose the semantic search engine:', [
+      { value: 'cosine',     label: 'cosine',     description: 'In-process cosine similarity. No extra deps. Best for small/medium projects.' },
+      { value: 'sqlite-vec', label: 'sqlite-vec', description: 'ANN index. Sub-linear search. Best for large codebases. Needs: better-sqlite3, sqlite-vec (native).' },
+      { value: 'orama',      label: 'orama',      description: 'Hybrid search (full-text + vector). Pure JS. Needs: @orama/orama, @orama/plugin-data-persistence.' },
+      { value: 'pglite',     label: 'pglite',     description: 'Hybrid search via PostgreSQL + pgvector. Exact results. Pure WASM. Needs: @electric-sql/pglite.' },
+    ]);
     patch.semanticEngine = semanticEngine;
     patch.useVecIndex = semanticEngine === 'sqlite-vec'; // keep legacy field in sync
   }

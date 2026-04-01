@@ -91,6 +91,7 @@ export class VectorManager {
   private vecIndex: VecIndex | null = null;
   private oramaIndex: OramaIndex | null = null;
   private pgliteIndex: PGliteIndex | null = null;
+  private _engineFallback: string | null = null;
 
   constructor(
     private readonly db: GraphDatabase,
@@ -100,6 +101,11 @@ export class VectorManager {
 
   isInitialized(): boolean {
     return this.config.enableEmbeddings === true && this._initialized;
+  }
+
+  /** Non-null when the configured engine failed to load and cosine is being used instead. */
+  getEngineFallback(): string | null {
+    return this._engineFallback;
   }
 
   /**
@@ -155,21 +161,30 @@ export class VectorManager {
       if (engine === 'sqlite-vec') {
         this.vecIndex = new VecIndex(kirographDir, EMBEDDING_DIM);
         await this.vecIndex.initialize();
-        logDebug(this.vecIndex.isAvailable()
-          ? 'VectorManager: sqlite-vec ANN index ready'
-          : 'VectorManager: sqlite-vec unavailable, falling back to in-process cosine');
+        if (this.vecIndex.isAvailable()) {
+          logDebug('VectorManager: sqlite-vec ANN index ready');
+        } else {
+          this._engineFallback = 'sqlite-vec unavailable — run: npm install better-sqlite3 sqlite-vec';
+          logDebug('VectorManager: sqlite-vec unavailable, falling back to in-process cosine');
+        }
       } else if (engine === 'orama') {
         this.oramaIndex = new OramaIndex(kirographDir, EMBEDDING_DIM);
         await this.oramaIndex.initialize();
-        logDebug(this.oramaIndex.isAvailable()
-          ? 'VectorManager: Orama hybrid index ready'
-          : 'VectorManager: Orama unavailable, falling back to in-process cosine');
+        if (this.oramaIndex.isAvailable()) {
+          logDebug('VectorManager: Orama hybrid index ready');
+        } else {
+          this._engineFallback = 'orama unavailable — run: npm install @orama/orama @orama/plugin-data-persistence';
+          logDebug('VectorManager: Orama unavailable, falling back to in-process cosine');
+        }
       } else if (engine === 'pglite') {
         this.pgliteIndex = new PGliteIndex(kirographDir, EMBEDDING_DIM);
         await this.pgliteIndex.initialize();
-        logDebug(this.pgliteIndex.isAvailable()
-          ? 'VectorManager: PGlite+pgvector hybrid index ready'
-          : 'VectorManager: PGlite unavailable, falling back to in-process cosine');
+        if (this.pgliteIndex.isAvailable()) {
+          logDebug('VectorManager: PGlite+pgvector hybrid index ready');
+        } else {
+          this._engineFallback = 'pglite unavailable — run: npm install @electric-sql/pglite';
+          logDebug('VectorManager: PGlite unavailable, falling back to in-process cosine');
+        }
       }
     }
   }
@@ -190,8 +205,8 @@ export class VectorManager {
       const text = `search_document: ${nodeToText(node)}`;
       const output = await this.pipeline(text, { pooling: 'mean', normalize: true });
       const embedding = toFloat32Array(output.data);
-      // sqlite-vec and pglite are sole stores of record when active — skip the SQLite vectors table
-      if (!this.vecIndex?.isAvailable() && !this.pgliteIndex?.isAvailable()) {
+      // non-cosine engines are sole stores of record when active — skip the SQLite vectors table
+      if (!this.vecIndex?.isAvailable() && !this.oramaIndex?.isAvailable() && !this.pgliteIndex?.isAvailable()) {
         this.db.storeEmbedding(node.id, embedding, this.config.embeddingModel || DEFAULT_MODEL);
       }
       this.vecIndex?.upsert(node.id, embedding);
@@ -212,9 +227,9 @@ export class VectorManager {
 
   /**
    * Remove embeddings for the given node IDs from the active index.
-   * For cosine/sqlite-vec/orama the `vectors` SQLite table is cleaned up automatically
-   * via FK cascade when nodes are deleted. For pglite, pglite itself is the store
-   * of record so we delete from it explicitly here.
+   * For cosine the `vectors` SQLite table is cleaned up automatically via FK cascade
+   * when nodes are deleted. For sqlite-vec, orama, and pglite the engine itself is
+   * the sole store of record, so we delete from it explicitly here.
    */
   async deleteEmbeddings(nodeIds: string[]): Promise<void> {
     for (const id of nodeIds) {
@@ -233,13 +248,15 @@ export class VectorManager {
 
     const modelId = this.config.embeddingModel || DEFAULT_MODEL;
     const allNodes = this.db.getAllNodes().filter(n => EMBEDDABLE_KINDS.has(n.kind));
-    // When sqlite-vec or pglite is active it is the sole store — query it directly instead of SQLite
+    // When a non-cosine engine is active it is the sole store — query it directly instead of SQLite
     const existingIds = new Set(
       this.pgliteIndex?.isAvailable()
         ? await this.pgliteIndex.getEmbeddedNodeIds()
-        : this.vecIndex?.isAvailable()
-          ? this.vecIndex.getEmbeddedNodeIds()
-          : this.db.getEmbeddedNodeIds()
+        : this.oramaIndex?.isAvailable()
+          ? await this.oramaIndex.getEmbeddedNodeIds()
+          : this.vecIndex?.isAvailable()
+            ? this.vecIndex.getEmbeddedNodeIds()
+            : this.db.getEmbeddedNodeIds()
     );
     const pending = allNodes.filter(n => !existingIds.has(n.id));
 
@@ -263,8 +280,8 @@ export class VectorManager {
         for (let j = 0; j < batch.length; j++) {
           const node = batch[j]!;
           const embedding = flat.slice(j * dim, (j + 1) * dim);
-          // sqlite-vec and pglite are sole stores of record when active — skip the SQLite vectors table
-          if (!this.vecIndex?.isAvailable() && !this.pgliteIndex?.isAvailable()) {
+          // non-cosine engines are sole stores of record when active — skip the SQLite vectors table
+          if (!this.vecIndex?.isAvailable() && !this.oramaIndex?.isAvailable() && !this.pgliteIndex?.isAvailable()) {
             this.db.storeEmbedding(node.id, embedding, modelId);
           }
           this.vecIndex?.upsert(node.id, embedding);

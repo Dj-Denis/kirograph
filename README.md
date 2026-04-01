@@ -60,11 +60,11 @@ kg status
             ▼
 ┌───────────────────────────────────────────┐
 │         KiroGraph MCP Server              │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐  │
-│  │  search  │ │ callers  │ │ context  │  │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘  │
-│       └────────────┼────────────┘        │
-│         SQLite Graph DB (.kirograph/)    │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐   │
+│  │  search  │ │ callers  │ │ context  │   │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘   │
+│       └────────────┼────────────┘         │
+│         SQLite Graph DB (.kirograph/)     │
 └───────────────────────────────────────────┘
 ```
 
@@ -380,22 +380,37 @@ By default, KiroGraph uses exact name lookup and full-text search. Enable semant
 }
 ```
 
-This downloads the `nomic-ai/nomic-embed-text-v1.5` model (~130MB) to `~/.kirograph/models/` on first use and generates 768-dimensional vector embeddings for all functions, methods, classes, interfaces, type aliases, components, and modules. Embeddings are stored locally in the SQLite database and kept in sync automatically via Kiro hooks.
+This downloads the `nomic-ai/nomic-embed-text-v1.5` model (~130MB) to `~/.kirograph/models/` on first use and generates 768-dimensional vector embeddings for all functions, methods, classes, interfaces, type aliases, components, and modules. Embeddings are kept in sync automatically via Kiro hooks — on every file save, create, or delete.
 
-Use `kirograph install` to be guided through engine selection interactively, or set `semanticEngine` in `.kirograph/config.json` manually.
+Run `kirograph install` to be guided through engine selection interactively with an arrow-key menu, or set `semanticEngine` in `.kirograph/config.json` manually.
+
+#### Storage architecture
+
+Each engine owns its embedding store exclusively — there is no redundant write to the main graph database:
+
+| Engine | Graph store | Vector store |
+|--------|-------------|--------------|
+| `cosine` | `kirograph.db` (SQLite) | `kirograph.db` (`vectors` table) |
+| `sqlite-vec` | `kirograph.db` (SQLite) | `.kirograph/vec.db` (sqlite-vec) |
+| `orama` | `kirograph.db` (SQLite) | `.kirograph/orama.json` (Orama) |
+| `pglite` | `kirograph.db` (SQLite) | `.kirograph/pglite/` (PGlite+pgvector) |
+
+The graph store (`kirograph.db`) always holds nodes, edges, files, and all structural data regardless of which engine is active.
 
 #### Engine comparison
 
-| Engine | Quality | Speed | Extra deps | Best for |
-|--------|---------|-------|------------|----------|
-| `cosine` *(default)* | good | linear scan | none | small / medium projects |
-| `sqlite-vec` | good | sub-linear ANN | `better-sqlite3`, `sqlite-vec` (native) | large codebases |
-| `orama` | **best** | fast | `@orama/orama`, `@orama/plugin-data-persistence` (pure JS) | best result quality, no native deps |
-| `pglite` | **best** | fast (HNSW) | `@electric-sql/pglite` (pure WASM) | exact results, no native deps, PostgreSQL semantics |
+| Engine | Search type | Extra deps | Native? | Best for |
+|--------|-------------|------------|---------|----------|
+| `cosine` *(default)* | Exact cosine, linear scan | none | — | Small / medium projects, zero setup |
+| `sqlite-vec` | ANN (approximate), sub-linear | `better-sqlite3`, `sqlite-vec` | yes | Large codebases, fast ANN search |
+| `orama` | Hybrid (full-text + vector) | `@orama/orama`, `@orama/plugin-data-persistence` | no (pure JS) | Best result quality, no native deps |
+| `pglite` | Hybrid (full-text + vector), exact | `@electric-sql/pglite` | no (pure WASM) | Exact results, no native deps, PostgreSQL semantics |
+
+All non-cosine engines fall back silently to `cosine` if their optional dependencies are not installed.
 
 #### cosine (default)
 
-In-process cosine similarity over all stored embeddings. No extra dependencies.
+In-process cosine similarity over all stored embeddings. No extra dependencies. Embeddings are stored in the `vectors` table inside `kirograph.db`.
 
 ```json
 {
@@ -406,7 +421,7 @@ In-process cosine similarity over all stored embeddings. No extra dependencies.
 
 #### sqlite-vec
 
-Approximate nearest-neighbour (ANN) index stored in `.kirograph/vec.db`. Sub-linear search time — ideal for large codebases with thousands of indexed symbols. Requires two native dependencies.
+Approximate nearest-neighbour (ANN) index stored in `.kirograph/vec.db`. Sub-linear search time — ideal for large codebases with thousands of indexed symbols. The SQLite `vectors` table is not written to; `vec.db` is the sole embedding store.
 
 ```json
 {
@@ -419,11 +434,11 @@ Approximate nearest-neighbour (ANN) index stored in `.kirograph/vec.db`. Sub-lin
 npm install better-sqlite3 sqlite-vec
 ```
 
-If the dependencies are not installed, KiroGraph silently falls back to `cosine`.
+Requires two native dependencies (compiled C extensions). If not installed, falls back to `cosine`.
 
 #### orama
 
-Hybrid search powered by [Orama](https://github.com/oramasearch/orama) — combines full-text relevance and vector similarity in a **single query**, producing higher-quality results than running the two searches separately. The index is persisted to `.kirograph/orama.json`. Pure JS, no native compilation required.
+Hybrid search powered by [Orama](https://github.com/oramasearch/orama) — combines full-text relevance and vector similarity in a **single query**, producing higher-quality results than running the two searches separately. The index is persisted to `.kirograph/orama.json` and is the sole embedding store. Pure JS, no native compilation required.
 
 ```json
 {
@@ -436,11 +451,11 @@ Hybrid search powered by [Orama](https://github.com/oramasearch/orama) — combi
 npm install @orama/orama @orama/plugin-data-persistence
 ```
 
-If the dependencies are not installed, KiroGraph silently falls back to `cosine`.
+If not installed, falls back to `cosine`.
 
 #### pglite
 
-Hybrid search powered by [PGlite](https://github.com/electric-sql/pglite) — a WASM-compiled PostgreSQL with the [pgvector](https://github.com/pgvector/pgvector) extension. Combines exact nearest-neighbour vector search with full-text ranking (`ts_rank`) in a **single SQL query**. The database is persisted to `.kirograph/pglite/` using PostgreSQL's WAL-based storage. Pure WASM — no native compilation required.
+Hybrid search powered by [PGlite](https://github.com/electric-sql/pglite) — a WASM-compiled PostgreSQL with the [pgvector](https://github.com/pgvector/pgvector) extension. Combines **exact** nearest-neighbour vector search with full-text ranking (`ts_rank`) in a single SQL query. The database is persisted to `.kirograph/pglite/` using PostgreSQL's WAL-based storage and is the sole embedding store. Pure WASM — no native compilation required.
 
 ```json
 {
@@ -453,13 +468,13 @@ Hybrid search powered by [PGlite](https://github.com/electric-sql/pglite) — a 
 npm install @electric-sql/pglite
 ```
 
-Key advantages over other engines:
+Key advantages:
 - **Exact** vector results (not approximate) — deterministic and reproducible
 - Native SQL `ON CONFLICT` upsert — no remove+insert workaround
 - HNSW index (`vector_cosine_ops`) keeps search fast as the index grows
 - Single dependency, zero native binaries
 
-If the dependency is not installed, KiroGraph silently falls back to `cosine`.
+If not installed, falls back to `cosine`.
 
 ## Supported Languages
 

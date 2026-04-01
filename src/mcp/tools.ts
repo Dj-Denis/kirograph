@@ -374,6 +374,7 @@ export class ToolHandler {
                 'in-process cosine'
               }`,
               `  Embeddings:      ${stats.embeddingCount} / ${stats.nodes} symbols`,
+              ...(stats.engineFallback ? [`  ⚠ Engine fallback: ${stats.engineFallback}`] : []),
             ]
           : [`  Semantic search: disabled`];
         const frameworkLine = stats.frameworks.length > 0

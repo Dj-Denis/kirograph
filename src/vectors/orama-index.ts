@@ -207,6 +207,17 @@ export class OramaIndex {
     }
   }
 
+  /** Return all node IDs currently stored in the index. */
+  async getEmbeddedNodeIds(): Promise<string[]> {
+    if (!this._available || !this.db) return [];
+    try {
+      const results = await this.orama!.search(this.db, { term: '', limit: 1_000_000 });
+      return (results?.hits ?? []).map((hit: any) => hit.document.nodeId as string);
+    } catch {
+      return [];
+    }
+  }
+
   /** Number of documents currently in the index. */
   async count(): Promise<number> {
     if (!this._available || !this.db) return 0;
