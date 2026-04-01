@@ -202,10 +202,10 @@ export class VectorManager {
    * The `vectors` table in the main DB is cleaned up automatically via FK cascade
    * when nodes are deleted; this only needs to handle the sqlite-vec side.
    */
-  deleteEmbeddings(nodeIds: string[]): void {
+  async deleteEmbeddings(nodeIds: string[]): Promise<void> {
     for (const id of nodeIds) {
       this.vecIndex?.delete(id);
-      if (this.oramaIndex?.isAvailable()) this.oramaIndex.delete(id);
+      if (this.oramaIndex?.isAvailable()) await this.oramaIndex.delete(id);
     }
   }
 
@@ -221,7 +221,11 @@ export class VectorManager {
     const existingIds = new Set(this.db.getEmbeddedNodeIds());
     const pending = allNodes.filter(n => !existingIds.has(n.id));
 
-    if (pending.length === 0) return 0;
+    if (pending.length === 0) {
+      // Still save Orama in case prior deleteEmbeddings calls changed the index
+      if (this.oramaIndex?.isAvailable()) await this.oramaIndex.save();
+      return 0;
+    }
 
     let processed = 0;
     for (let i = 0; i < pending.length; i += BATCH_SIZE) {
