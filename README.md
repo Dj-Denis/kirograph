@@ -25,6 +25,40 @@ Everything is stored in a local SQLite database (`.kirograph/kirograph.db`). **N
 
 The index is kept fresh automatically via Kiro hooks — no background watcher process needed.
 
+## How Indexing Works
+
+Indexing has two layers: **structural** (always on) and **semantic** (opt-in).
+
+### Structural indexing
+
+tree-sitter parses every source file into an AST. Nodes and edges are extracted and written to `kirograph.db`. This is what powers all graph traversal tools (`kirograph_callers`, `kirograph_impact`, `kirograph_path`, etc.) and exact/FTS symbol search.
+
+This layer has no extra dependencies and runs on every `kirograph index` or `kirograph sync`.
+
+### Semantic indexing (opt-in)
+
+When `enableEmbeddings: true` is set, KiroGraph additionally generates 768-dimensional vector embeddings for every embeddable symbol (`function`, `method`, `class`, `interface`, `type_alias`, `component`, `module`) using the `nomic-ai/nomic-embed-text-v1.5` model (~130MB, downloaded once to `~/.kirograph/models/`).
+
+These embeddings power natural-language search in `kirograph_context` and act as a fallback in `kirograph_search`. The embeddings are stored in the **semantic engine** of your choice:
+
+| Engine | Store | Search type | Extra deps |
+|--------|-------|-------------|------------|
+| `cosine` *(default)* | `kirograph.db` (`vectors` table) | Exact cosine, linear scan | none |
+| `sqlite-vec` | `.kirograph/vec.db` | ANN (approximate), sub-linear | `better-sqlite3`, `sqlite-vec` (native) |
+| `orama` | `.kirograph/orama.json` | Hybrid (full-text + vector) | `@orama/orama`, `@orama/plugin-data-persistence` |
+| `pglite` | `.kirograph/pglite/` | Hybrid (full-text + vector), exact | `@electric-sql/pglite` (WASM) |
+
+Each engine owns its embedding store exclusively — nothing is written to the SQLite `vectors` table when a non-cosine engine is active. If an engine's optional dependency is not installed, KiroGraph silently falls back to `cosine`.
+
+Enable and configure via `kirograph install` (interactive arrow-key menu) or directly in `.kirograph/config.json`:
+
+```json
+{
+  "enableEmbeddings": true,
+  "semanticEngine": "pglite"
+}
+```
+
 ## Quick Start
 
 ```bash
@@ -127,14 +161,14 @@ All 12 tools are auto-approved and available to Kiro once installed.
 
 **Start here.** Comprehensive context for a task or feature — often sufficient alone without additional tool calls.
 
-Extracts symbol tokens from the task description, finds relevant entry points via exact name lookup + semantic search + full-text search, resolves imports to definitions, and returns entry points, related symbols, and code snippets.
-
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `task` | string | required | Task, bug, or feature description |
 | `maxNodes` | number | 20 | Max symbols to include |
 | `includeCode` | boolean | true | Include code snippets |
 | `projectPath` | string | cwd | Project root path |
+
+**How it works:** Extracts symbol tokens from the task description (CamelCase, snake_case, SCREAMING_SNAKE, dot.notation) → runs exact name lookup + FTS + **vector search** against the active semantic engine → resolves imports to their definitions → expands through the graph to related symbols → returns entry points, related nodes, edges, and code snippets. This is the only tool that uses the vector engine on every call.
 
 ### `kirograph_search`
 
@@ -147,6 +181,8 @@ Quick symbol search by name. Returns locations only, no code.
 | `limit` | number | 10 | Max results (1–100) |
 | `projectPath` | string | cwd | Project root path |
 
+**How it works:** Exact name match → SQLite FTS → LIKE fallback → **vector search** only if all three return nothing. Pure graph database lookup in the common case; vector engine only as a last resort.
+
 ### `kirograph_callers`
 
 Find all functions/methods that call a specific symbol.
@@ -156,6 +192,8 @@ Find all functions/methods that call a specific symbol.
 | `symbol` | string | required | Symbol name |
 | `limit` | number | 20 | Max results (1–100) |
 | `projectPath` | string | cwd | Project root path |
+
+**How it works:** BFS traversal of incoming `call` edges in the graph database. No vector engine involved.
 
 ### `kirograph_callees`
 
@@ -167,6 +205,8 @@ Find all functions/methods that a specific symbol calls.
 | `limit` | number | 20 | Max results (1–100) |
 | `projectPath` | string | cwd | Project root path |
 
+**How it works:** BFS traversal of outgoing `call` edges in the graph database. No vector engine involved.
+
 ### `kirograph_impact`
 
 Analyze what code would be affected by changing a symbol. Use before making changes.
@@ -176,6 +216,8 @@ Analyze what code would be affected by changing a symbol. Use before making chan
 | `symbol` | string | required | Symbol name |
 | `depth` | number | 2 | Traversal depth |
 | `projectPath` | string | cwd | Project root path |
+
+**How it works:** BFS traversal of all incoming edges (`call`, `import`, `reference`, etc.) up to the specified depth. No vector engine involved.
 
 ### `kirograph_node`
 
@@ -189,6 +231,8 @@ Get details about a specific symbol, optionally including source code.
 
 Returns: kind, name, qualified name, file location, signature, docstring, and optionally source code.
 
+**How it works:** Single row lookup by symbol name in the graph database. If `includeCode` is true, reads the relevant lines directly from the source file on disk. No vector engine involved.
+
 ### `kirograph_type_hierarchy`
 
 Traverse the type hierarchy of a class or interface.
@@ -198,6 +242,8 @@ Traverse the type hierarchy of a class or interface.
 | `symbol` | string | required | Class or interface name |
 | `direction` | string | `both` | `up` (base types), `down` (derived types), `both` |
 | `projectPath` | string | cwd | Project root path |
+
+**How it works:** Recursive traversal of `extends` and `implements` edges in the graph database. No vector engine involved.
 
 ### `kirograph_path`
 
@@ -209,6 +255,8 @@ Find the shortest path between two symbols in the dependency graph.
 | `to` | string | required | Target symbol name |
 | `projectPath` | string | cwd | Project root path |
 
+**How it works:** BFS shortest-path search across all edge types in the graph database. No vector engine involved.
+
 ### `kirograph_dead_code`
 
 Find symbols with no incoming references (potential dead code). Only unexported symbols are considered.
@@ -218,6 +266,8 @@ Find symbols with no incoming references (potential dead code). Only unexported 
 | `limit` | number | 50 | Max results (1–100) |
 | `projectPath` | string | cwd | Project root path |
 
+**How it works:** Queries the graph database for nodes with zero incoming edges, filtered to non-exported symbols. No vector engine involved.
+
 ### `kirograph_circular_deps`
 
 Find circular import dependencies in the codebase.
@@ -225,6 +275,8 @@ Find circular import dependencies in the codebase.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `projectPath` | string | cwd | Project root path |
+
+**How it works:** Tarjan's strongly connected components algorithm over `import` edges in the graph database. No vector engine involved.
 
 ### `kirograph_files`
 
@@ -239,6 +291,8 @@ List the indexed file structure with filtering and format options.
 | `includeMetadata` | boolean | true | Include language and symbol counts |
 | `projectPath` | string | cwd | Project root path |
 
+**How it works:** Reads file records from the graph database and builds a tree structure in memory. Filtering is applied before tree construction. No vector engine involved.
+
 ### `kirograph_status`
 
 Check index health and statistics: files indexed, symbol count, edge count, breakdown by kind and language, frameworks detected, database size, and semantic search status.
@@ -246,6 +300,8 @@ Check index health and statistics: files indexed, symbol count, edge count, brea
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `projectPath` | string | cwd | Project root path |
+
+**How it works:** Reads aggregate counts from the graph database + calls `count()` on the active vector engine to report embedding coverage. No graph traversal, no vector search.
 
 ## CLI Reference
 
