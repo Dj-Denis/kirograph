@@ -363,7 +363,8 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `trackCallSites` | boolean | `true` | Record line/column for call edges |
 | `enableEmbeddings` | boolean | `false` | Generate semantic embeddings (opt-in, ~130MB model) |
 | `embeddingModel` | string | `nomic-ai/nomic-embed-text-v1.5` | HuggingFace model for embeddings |
-| `useVecIndex` | boolean | `false` | Use sqlite-vec ANN index for semantic search (opt-in, requires `npm install better-sqlite3 sqlite-vec`) |
+| `semanticEngine` | string | `cosine` | Search engine: `cosine`, `sqlite-vec`, or `orama` (see below) |
+| `useVecIndex` | boolean | `false` | Deprecated alias for `semanticEngine: "sqlite-vec"` |
 | `minLogLevel` | string | `warn` | Log level: `debug`, `info`, `warn`, `error` |
 | `fuzzyResolutionThreshold` | number | `0.5` | Name matching threshold for cross-file resolution (0.0–1.0) |
 
@@ -379,24 +380,62 @@ By default, KiroGraph uses exact name lookup and full-text search. Enable semant
 }
 ```
 
-This downloads the `nomic-ai/nomic-embed-text-v1.5` model (~130MB) to `~/.kirograph/models/` on first use and generates 768-dimensional vector embeddings for all functions, methods, classes, interfaces, type aliases, components, and modules. Embeddings are stored locally in the SQLite database.
+This downloads the `nomic-ai/nomic-embed-text-v1.5` model (~130MB) to `~/.kirograph/models/` on first use and generates 768-dimensional vector embeddings for all functions, methods, classes, interfaces, type aliases, components, and modules. Embeddings are stored locally in the SQLite database and kept in sync automatically via Kiro hooks.
 
-By default, semantic search uses in-process cosine similarity (linear scan, no extra dependencies). For larger codebases, enable the sqlite-vec ANN index for sub-linear search:
+Use `kirograph install` to be guided through engine selection interactively, or set `semanticEngine` in `.kirograph/config.json` manually.
+
+#### Engine comparison
+
+| Engine | Quality | Speed | Extra deps | Best for |
+|--------|---------|-------|------------|----------|
+| `cosine` *(default)* | good | linear scan | none | small / medium projects |
+| `sqlite-vec` | good | sub-linear ANN | `better-sqlite3`, `sqlite-vec` (native) | large codebases |
+| `orama` | **best** | fast | `@orama/orama`, `@orama/plugin-data-persistence` (pure JS) | best result quality |
+
+#### cosine (default)
+
+In-process cosine similarity over all stored embeddings. No extra dependencies.
 
 ```json
 {
   "enableEmbeddings": true,
-  "useVecIndex": true
+  "semanticEngine": "cosine"
 }
 ```
 
-Then install the optional native dependencies:
+#### sqlite-vec
+
+Approximate nearest-neighbour (ANN) index stored in `.kirograph/vec.db`. Sub-linear search time — ideal for large codebases with thousands of indexed symbols. Requires two native dependencies.
+
+```json
+{
+  "enableEmbeddings": true,
+  "semanticEngine": "sqlite-vec"
+}
+```
 
 ```bash
 npm install better-sqlite3 sqlite-vec
 ```
 
-The ANN index is stored in `.kirograph/vec.db`. If `better-sqlite3` or `sqlite-vec` are not installed, KiroGraph silently falls back to in-process cosine search.
+If the dependencies are not installed, KiroGraph silently falls back to `cosine`.
+
+#### orama
+
+Hybrid search powered by [Orama](https://github.com/oramasearch/orama) — combines full-text relevance and vector similarity in a **single query**, producing higher-quality results than running the two searches separately. The index is persisted to `.kirograph/orama.json`. Pure JS, no native compilation required.
+
+```json
+{
+  "enableEmbeddings": true,
+  "semanticEngine": "orama"
+}
+```
+
+```bash
+npm install @orama/orama @orama/plugin-data-persistence
+```
+
+If the dependencies are not installed, KiroGraph silently falls back to `cosine`.
 
 ## Supported Languages
 
