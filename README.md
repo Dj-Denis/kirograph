@@ -66,7 +66,6 @@ npm install -g kirograph
 
 # In your project:
 kirograph install    # wire up MCP + hooks + steering in .kiro/
-kirograph init -i    # create .kirograph/ and index your code
 ```
 
 Restart Kiro. It will now use KiroGraph tools automatically.
@@ -75,8 +74,6 @@ Or using the short alias:
 
 ```bash
 kg install
-kg init -i
-kg status
 ```
 
 ## How It Works
@@ -159,7 +156,7 @@ All 12 tools are auto-approved and available to Kiro once installed.
 
 ### `kirograph_context`
 
-**Start here.** Comprehensive context for a task or feature — often sufficient alone without additional tool calls.
+Comprehensive context for a task or feature — often sufficient alone without additional tool calls.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
