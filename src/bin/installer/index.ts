@@ -81,6 +81,15 @@ export async function runInstaller(): Promise<void> {
             console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
             console.warn(`    npm install @electric-sql/pglite`);
           }
+        } else if (patch.semanticEngine === 'lancedb') {
+          console.log(`\n  Installing LanceDB dependencies...`);
+          const result = spawnSync('npm', ['install', '@lancedb/lancedb'], { stdio: 'inherit', shell: true });
+          if (result.status === 0) {
+            console.log(`  ✓ @lancedb/lancedb installed`);
+          } else {
+            console.warn(`  ✗ npm install failed (exit ${result.status}). Run manually:`);
+            console.warn(`    npm install @lancedb/lancedb`);
+          }
         }
       }
       console.log(`  • extractDocstrings: ${patch.extractDocstrings}`);

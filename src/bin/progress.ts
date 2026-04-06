@@ -5,7 +5,6 @@
  * Lives in src/bin/ because it is a display concern — not part of the core library.
  */
 
-import * as path from 'path';
 import type { IndexProgress } from '../types';
 
 // ── ANSI helpers ──────────────────────────────────────────────────────────────
@@ -33,8 +32,7 @@ export function renderIndexProgress(p: IndexProgress): void {
     process.stdout.write(`  ${_v}✓ scanning${_r}   ${_v}${p.current}${_r} ${_d}files found${_r}\n`);
 
   } else if (p.phase === 'parsing') {
-    const file = p.currentFile ? path.basename(p.currentFile) : '';
-    process.stdout.write(`\r  ${_v}parsing${_r}    [${_bar(pct)}] ${_v}${pct}%${_r}  ${_d}${file}${_r}${' '.repeat(8)}`);
+    process.stdout.write(`\r  ${_v}parsing${_r}    [${_bar(pct)}] ${_v}${pct}%${_r}${' '.repeat(8)}`);
     if (p.current === p.total) process.stdout.write('\n');
 
   } else if (p.phase === 'resolving') {

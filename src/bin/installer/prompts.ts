@@ -68,11 +68,17 @@ export async function arrowSelect<T>(
   const CURSOR_DOWN = '\x1b[B';
   const CLEAR_LINE  = '\x1b[2K\x1b[G';
 
+  function descLineCount(desc: string): number {
+    const termWidth = process.stdout.columns || 80;
+    return Math.max(1, Math.ceil((desc.length + 4) / termWidth));
+  }
+
   let selected = defaultIndex;
+  let prevDescLines = descLineCount(options[defaultIndex]!.description);
 
   function render(first: boolean) {
     if (!first) {
-      process.stdout.write(`\x1b[${options.length + 1}A`);
+      process.stdout.write(`\x1b[${options.length + prevDescLines}A`);
     }
     for (let i = 0; i < options.length; i++) {
       const active = i === selected;
@@ -82,6 +88,7 @@ export async function arrowSelect<T>(
     }
     const desc = options[selected]!.description;
     process.stdout.write(`${CLEAR_LINE}  ${dim}${desc}${reset}\n`);
+    prevDescLines = descLineCount(desc);
   }
 
   return new Promise(resolve => {
@@ -107,7 +114,7 @@ export async function arrowSelect<T>(
         if (wasTTY) stdin.setRawMode(false);
         stdin.pause();
         rl.resume();
-        process.stdout.write(`\x1b[${options.length + 1}A`);
+        process.stdout.write(`\x1b[${options.length + prevDescLines}A`);
         for (let i = 0; i < options.length; i++) {
           const active = i === selected;
           const cursor = active ? `${green}${bold}❯${reset}` : ' ';

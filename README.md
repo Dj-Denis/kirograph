@@ -47,6 +47,7 @@ These embeddings power natural-language search in `kirograph_context` and act as
 | `sqlite-vec` | `.kirograph/vec.db` | ANN (approximate), sub-linear | `better-sqlite3`, `sqlite-vec` (native) |
 | `orama` | `.kirograph/orama.json` | Hybrid (full-text + vector) | `@orama/orama`, `@orama/plugin-data-persistence` |
 | `pglite` | `.kirograph/pglite/` | Hybrid (full-text + vector), exact | `@electric-sql/pglite` (WASM) |
+| `lancedb` | `.kirograph/lancedb/` | ANN (approximate), sub-linear | `@lancedb/lancedb` (pure JS) |
 
 Each engine owns its embedding store exclusively — nothing is written to the SQLite `vectors` table when a non-cosine engine is active. If an engine's optional dependency is not installed, KiroGraph silently falls back to `cosine`.
 
@@ -416,7 +417,7 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `trackCallSites` | boolean | `true` | Record line/column for call edges |
 | `enableEmbeddings` | boolean | `false` | Generate semantic embeddings (opt-in, ~130MB model) |
 | `embeddingModel` | string | `nomic-ai/nomic-embed-text-v1.5` | HuggingFace model for embeddings |
-| `semanticEngine` | string | `cosine` | Search engine: `cosine`, `sqlite-vec`, `orama`, or `pglite` (see below) |
+| `semanticEngine` | string | `cosine` | Search engine: `cosine`, `sqlite-vec`, `orama`, `pglite`, or `lancedb` (see below) |
 | `useVecIndex` | boolean | `false` | Deprecated alias for `semanticEngine: "sqlite-vec"` |
 | `minLogLevel` | string | `warn` | Log level: `debug`, `info`, `warn`, `error` |
 | `fuzzyResolutionThreshold` | number | `0.5` | Name matching threshold for cross-file resolution (0.0–1.0) |
@@ -447,6 +448,7 @@ Each engine owns its embedding store exclusively — there is no redundant write
 | `sqlite-vec` | `kirograph.db` (SQLite) | `.kirograph/vec.db` (sqlite-vec) |
 | `orama` | `kirograph.db` (SQLite) | `.kirograph/orama.json` (Orama) |
 | `pglite` | `kirograph.db` (SQLite) | `.kirograph/pglite/` (PGlite+pgvector) |
+| `lancedb` | `kirograph.db` (SQLite) | `.kirograph/lancedb/` (Apache Lance) |
 
 The graph store (`kirograph.db`) always holds nodes, edges, files, and all structural data regardless of which engine is active.
 
@@ -458,6 +460,7 @@ The graph store (`kirograph.db`) always holds nodes, edges, files, and all struc
 | `sqlite-vec` | ANN (approximate), sub-linear | `better-sqlite3`, `sqlite-vec` | yes | Large codebases, fast ANN search |
 | `orama` | Hybrid (full-text + vector) | `@orama/orama`, `@orama/plugin-data-persistence` | no (pure JS) | Best result quality, no native deps |
 | `pglite` | Hybrid (full-text + vector), exact | `@electric-sql/pglite` | no (pure WASM) | Exact results, no native deps, PostgreSQL semantics |
+| `lancedb` | ANN (approximate), sub-linear | `@lancedb/lancedb` | no (pure JS) | Fast ANN search, no native compilation required |
 
 All non-cosine engines fall back silently to `cosine` if their optional dependencies are not installed.
 
@@ -526,6 +529,28 @@ Key advantages:
 - Native SQL `ON CONFLICT` upsert — no remove+insert workaround
 - HNSW index (`vector_cosine_ops`) keeps search fast as the index grows
 - Single dependency, zero native binaries
+
+If not installed, falls back to `cosine`.
+
+#### lancedb
+
+ANN vector search powered by [LanceDB](https://github.com/lancedb/lancedb) — stores embeddings in Apache Lance columnar format at `.kirograph/lancedb/`. Sub-linear search time using cosine distance. Pure JS, no native compilation required.
+
+```json
+{
+  "enableEmbeddings": true,
+  "semanticEngine": "lancedb"
+}
+```
+
+```bash
+npm install @lancedb/lancedb
+```
+
+Key characteristics:
+- **Columnar storage** (Apache Lance format) — efficient for batch reads and writes
+- **ANN cosine search** — fast, sub-linear query time
+- Pure JS — no native binaries or WASM required
 
 If not installed, falls back to `cosine`.
 
