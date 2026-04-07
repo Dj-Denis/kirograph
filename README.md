@@ -398,54 +398,27 @@ if [ -n "$AFFECTED" ]; then
 fi
 ```
 
-### Qdrant Engine
+### Dashboard
 
-When `semanticEngine` is set to `qdrant`, use these commands to manage the background server and dashboard.
-
-```bash
-kirograph qdrant start [path]   # Start server (if not running) and open dashboard
-kirograph qdrant stop [path]    # Stop the Qdrant server
-```
-
-**`qdrant start`**
-
-- If the Qdrant server is already running for this project, reconnects to it.
-- If not running, spawns the Qdrant binary (from `qdrant-local`).
-- Downloads the [Qdrant Web UI](https://github.com/qdrant/qdrant-web-ui) on first use (cached at `.kirograph/qdrant/dashboard/`) and serves it via the Qdrant built-in static content feature.
-- Opens the dashboard in your browser at `http://127.0.0.1:<port>/dashboard`.
-- The Qdrant server keeps running as a background daemon after this command exits.
-
-**`qdrant stop`**
-
-- Sends SIGTERM to the Qdrant background process and removes the state file.
-- Does nothing if no server is running.
-
-The Qdrant server runs as a persistent daemon across `kg` commands. The state file (`.kirograph/qdrant-server.json`) tracks the PID and port. Once the Web UI is downloaded, it is served automatically on every subsequent start via `QDRANT__SERVICE__STATIC_CONTENT_DIR`.
-
-### Typesense Engine
-
-When `semanticEngine` is set to `typesense`, use these commands to manage the background server and dashboard.
+When `semanticEngine` is set to `qdrant` or `typesense`, use these commands to manage the background server and its dashboard UI.
 
 ```bash
-kirograph typesense start [path]   # Start server (if not running) and open local dashboard
-kirograph typesense stop [path]    # Stop the Typesense server
+kirograph dashboard start [path]   # Start server (if not running) and open dashboard
+kirograph dashboard stop [path]    # Stop the running engine server
 ```
 
-**`typesense start`**
+**`dashboard start`**
 
-- If the Typesense server is already running for this project, reconnects to it.
-- If not running, downloads the binary (first time only, ~37 MB, cached at `~/.kirograph/bin/`) and starts it.
-- Downloads the [Typesense Dashboard](https://github.com/bfritscher/typesense-dashboard) static UI on first use (cached at `.kirograph/typesense/dashboard/`).
-- Serves the dashboard locally and opens it in your browser.
-- Prints the Node URL and API key to use in the dashboard connection form.
-- Keep the process running while using the dashboard; press Ctrl+C to stop the dashboard server (the Typesense server keeps running as a background daemon).
+Reads `semanticEngine` from `.kirograph/config.json` and dispatches accordingly:
 
-**`typesense stop`**
+- **qdrant**: Downloads the [Qdrant Web UI](https://github.com/qdrant/qdrant-web-ui) on first use (cached at `.kirograph/qdrant/dashboard/`), spawns the Qdrant server with `QDRANT__SERVICE__STATIC_CONTENT_DIR` set so the dashboard is served natively, and opens `http://127.0.0.1:<port>/dashboard` in your browser. If the server is already running with the dashboard, reconnects instead of restarting.
+- **typesense**: Downloads the [Typesense Dashboard](https://github.com/bfritscher/typesense-dashboard) static UI on first use (cached at `.kirograph/typesense/dashboard/`), starts the Typesense server if not already running, serves the dashboard locally via a Node HTTP server, and opens it in your browser. Press Ctrl+C to stop the dashboard server — the Typesense server keeps running as a background daemon.
 
-- Sends SIGTERM to the Typesense background process and removes the state file.
-- Does nothing if no server is running.
+Both servers run as persistent daemons. The state file (`.kirograph/qdrant-server.json` or `.kirograph/typesense-server.json`) tracks the PID and port for reconnection across `kg` commands.
 
-The Typesense server runs as a background daemon — it persists across `kg` commands. The state file (`.kirograph/typesense-server.json`) tracks the PID and port so every command can reconnect instantly without restarting.
+**`dashboard stop`**
+
+Reads `semanticEngine` from config and sends SIGTERM to the running background process, then removes the state file. Does nothing if no server is running.
 
 ### MCP Server
 
@@ -628,7 +601,7 @@ Key characteristics:
 - **HNSW index** — high-quality ANN search with Qdrant's native indexing
 - **Embedded binary** — no separate server setup; the process is spawned and managed automatically
 - **Persistent daemon** — the server stays running between `kg` commands; state tracked in `.kirograph/qdrant-server.json`
-- **Built-in dashboard** — run `kg qdrant start` to download the [Qdrant Web UI](https://github.com/qdrant/qdrant-web-ui) and open it (cached at `.kirograph/qdrant/dashboard/`, served via Qdrant's built-in static content feature)
+- **Built-in dashboard** — run `kg dashboard start` to download the [Qdrant Web UI](https://github.com/qdrant/qdrant-web-ui) and open it (cached at `.kirograph/qdrant/dashboard/`, served via Qdrant's built-in static content feature)
 - **Async startup** — polls `/readyz` instead of blocking with a fixed sleep
 - **Cosine distance** metric
 - Data persists across restarts in `.kirograph/qdrant/`
@@ -636,8 +609,8 @@ Key characteristics:
 Manage the server:
 
 ```bash
-kirograph qdrant start   # start server + open dashboard
-kirograph qdrant stop    # stop server
+kirograph dashboard start   # start server + open dashboard
+kirograph dashboard stop    # stop server
 ```
 
 If not installed, falls back to `cosine`.
@@ -661,7 +634,7 @@ Key characteristics:
 - **HNSW index** — high-quality ANN search with Typesense's native indexing
 - **Auto-downloaded binary** — no manual server setup; the binary is fetched and cached at `~/.kirograph/bin/` on first run
 - **Persistent daemon** — the server stays running between `kg` commands; state tracked in `.kirograph/typesense-server.json`
-- **Local dashboard** — run `kg typesense start` to open the built-in Typesense Dashboard UI (served locally, cached at `.kirograph/typesense/dashboard/`)
+- **Local dashboard** — run `kg dashboard start` to open the built-in Typesense Dashboard UI (served locally, cached at `.kirograph/typesense/dashboard/`)
 - **Async startup** — polls `/health` instead of blocking with a fixed sleep
 - **Cosine distance** metric
 - Data persists across restarts in `.kirograph/typesense/`
@@ -669,8 +642,8 @@ Key characteristics:
 Manage the server:
 
 ```bash
-kirograph typesense start   # start server + open dashboard
-kirograph typesense stop    # stop server
+kirograph dashboard start   # start server + open dashboard
+kirograph dashboard stop    # stop server
 ```
 
 If not installed (or binary download fails), falls back to `cosine`.

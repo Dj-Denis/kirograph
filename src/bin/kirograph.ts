@@ -20,8 +20,7 @@ import { register as registerSyncIfDirty } from './commands/sync-if-dirty';
 import { register as registerUnlock } from './commands/unlock';
 import { register as registerInstall } from './commands/install';
 import { register as registerServe } from './commands/serve';
-import { register as registerTypesense } from './commands/typesense';
-import { register as registerQdrant } from './commands/qdrant';
+import { register as registerDashboard } from './commands/dashboard';
 
 const program = new Command();
 
@@ -49,8 +48,7 @@ registerFiles(program);
 registerAffected(program);
 registerUnlock(program);
 registerServe(program);
-registerTypesense(program);
-registerQdrant(program);
+registerDashboard(program);
 
 // Show banner + help when called with no arguments, otherwise parse normally
 if (process.argv.length === 2) {
