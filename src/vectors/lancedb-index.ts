@@ -12,7 +12,7 @@
  *   - Pure JS/WASM, no native compilation required
  *   - Columnar storage (Apache Lance format) — efficient for batch reads/writes
  *   - ANN search via IVF-PQ or HNSW index for sub-linear query time
- *   - Simple upsert via overwrite merge (delete + insert)
+ *   - Native upsert via mergeInsert (single round-trip, no delete+insert dance)
  */
 
 import * as path from 'path';
@@ -68,15 +68,14 @@ export class LanceDBIndex {
         this.table = await this.db.openTable(TABLE_NAME);
       } else {
         // Create table with a dummy record so LanceDB knows the schema, then delete it.
-        const placeholder = this._makeRecord(
-          '__init__',
-          '__init__',
-          'function',
-          '',
-          '',
-          new Float32Array(this.dim),
-        );
-        this.table = await this.db.createTable(TABLE_NAME, [placeholder]);
+        this.table = await this.db.createTable(TABLE_NAME, [{
+          node_id:   '__init__',
+          name:      '__init__',
+          kind:      'function',
+          file_path: '',
+          signature: '',
+          vector:    new Float32Array(this.dim),
+        }]);
         await this.table.delete(`node_id = '__init__'`);
       }
 
@@ -87,37 +86,26 @@ export class LanceDBIndex {
     }
   }
 
-  /** Build a plain-object row for the LanceDB table. */
-  private _makeRecord(
-    nodeId: string,
-    name: string,
-    kind: string,
-    filePath: string,
-    signature: string,
-    embedding: Float32Array,
-  ): Record<string, unknown> {
-    return {
-      node_id:   nodeId,
-      name,
-      kind,
-      file_path: filePath,
-      signature,
-      vector:    Array.from(embedding),
-    };
-  }
-
   /**
-   * Insert or update a node. LanceDB does not have a native upsert, so we
-   * delete any existing row for the node_id first, then add the new record.
+   * Insert or update a node using LanceDB's native mergeInsert — a single
+   * round-trip that updates the row if node_id exists, inserts it otherwise.
    */
   async upsert(node: Node, embedding: Float32Array): Promise<void> {
     if (!this._available || !this.table) return;
 
     try {
-      await this.table.delete(`node_id = '${node.id.replace(/'/g, "''")}'`);
-      await this.table.add([
-        this._makeRecord(node.id, node.name, node.kind, node.filePath, node.signature ?? '', embedding),
-      ]);
+      await this.table
+        .mergeInsert('node_id')
+        .whenMatchedUpdateAll()
+        .whenNotMatchedInsertAll()
+        .execute([{
+          node_id:   node.id,
+          name:      node.name,
+          kind:      node.kind,
+          file_path: node.filePath,
+          signature: node.signature ?? '',
+          vector:    embedding,
+        }]);
     } catch (err) {
       logWarn('LanceDBIndex: upsert failed', { nodeId: node.id, error: String(err) });
     }
@@ -144,7 +132,7 @@ export class LanceDBIndex {
 
     try {
       const results = await this.table
-        .search(Array.from(queryVec))
+        .search(queryVec)
         .distanceType('cosine')
         .limit(topN)
         .toArray();
