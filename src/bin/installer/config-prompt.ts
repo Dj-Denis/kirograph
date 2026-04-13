@@ -6,7 +6,7 @@ import * as readline from 'readline';
 import { KiroGraphConfig } from '../../config';
 import { ask, askBool, arrowSelect, dim, reset, violet } from './prompts';
 
-export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites'> & { embeddingModel?: string };
+export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture'> & { embeddingModel?: string };
 export type SemanticEngine = KiroGraphConfig['semanticEngine'];
 
 export const DEFAULT_EMBEDDING_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
@@ -18,7 +18,7 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
     'Enables semantic/similarity-based code search. Increases indexing time and requires a compatible local embedding model (e.g. via Ollama).',
   );
 
-  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: true, trackCallSites: true };
+  const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: true, trackCallSites: true, enableArchitecture: false };
 
   if (enableEmbeddings) {
     console.log(`\n  ${dim}HuggingFace model identifier for generating embeddings (e.g. org/model-name).${reset}`);
@@ -74,6 +74,12 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
     rl,
     'Track call sites to enable caller/callee graph traversal?',
     'Enables the kirograph_callers and kirograph_callees MCP tools for graph traversal. Increases index size.',
+  );
+
+  patch.enableArchitecture = await askBool(
+    rl,
+    'Enable architecture analysis (package graph + layer detection)?',
+    'Detects packages from manifests (package.json, go.mod, Cargo.toml, etc.) and architectural layers (api, service, data, ui, shared) from file structure. Enables kirograph_architecture, kirograph_coupling, and kirograph_package MCP tools.',
   );
 
   return patch;
