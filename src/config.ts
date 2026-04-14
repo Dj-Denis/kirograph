@@ -23,6 +23,9 @@ export interface KiroGraphConfig {
   // Parity fields:
   enableEmbeddings: boolean;
   embeddingModel: string;
+  embeddingDim: number;
+  enableArchitecture: boolean;
+  architectureLayers?: Record<string, string[]>;
   /** @deprecated Use semanticEngine instead. Kept for backwards compatibility. */
   useVecIndex: boolean;
   semanticEngine: 'cosine' | 'sqlite-vec' | 'orama' | 'pglite' | 'lancedb' | 'qdrant' | 'typesense';
@@ -40,8 +43,9 @@ const CONFIG_FILE = 'config.json';
 
 const KNOWN_FIELDS = new Set<string>([
   'version', 'languages', 'include', 'exclude', 'maxFileSize',
-  'extractDocstrings', 'trackCallSites', 'enableEmbeddings', 'embeddingModel', 'useVecIndex', 'semanticEngine',
+  'extractDocstrings', 'trackCallSites', 'enableEmbeddings', 'embeddingModel', 'embeddingDim', 'useVecIndex', 'semanticEngine',
   'typesenseDashboard', 'qdrantDashboard', 'minLogLevel', 'frameworkHints', 'fuzzyResolutionThreshold',
+  'enableArchitecture', 'architectureLayers',
 ]);
 
 const LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
@@ -74,6 +78,8 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     trackCallSites: true,
     enableEmbeddings: false,
     embeddingModel: 'nomic-ai/nomic-embed-text-v1.5',
+    embeddingDim: 768,
+    enableArchitecture: false,
     useVecIndex: false,
     semanticEngine: 'cosine',
     typesenseDashboard: false,
@@ -122,6 +128,13 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const embeddingModel = typeof raw.embeddingModel === 'string' && raw.embeddingModel.length > 0
     ? raw.embeddingModel
     : defaults.embeddingModel;
+  const embeddingDim = typeof raw.embeddingDim === 'number' && raw.embeddingDim > 0
+    ? raw.embeddingDim
+    : defaults.embeddingDim;
+  const enableArchitecture = typeof raw.enableArchitecture === 'boolean'
+    ? raw.enableArchitecture
+    : defaults.enableArchitecture;
+  const architectureLayers = _validateArchitectureLayers(raw.architectureLayers);
   const useVecIndex = typeof raw.useVecIndex === 'boolean'
     ? raw.useVecIndex
     : defaults.useVecIndex;
@@ -163,6 +176,9 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     trackCallSites,
     enableEmbeddings,
     embeddingModel,
+    embeddingDim,
+    enableArchitecture,
+    ...(architectureLayers !== undefined ? { architectureLayers } : {}),
     useVecIndex,
     semanticEngine,
     typesenseDashboard,
@@ -171,6 +187,18 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     frameworkHints,
     fuzzyResolutionThreshold,
   };
+}
+
+function _validateArchitectureLayers(raw: unknown): Record<string, string[]> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const result: Record<string, string[]> = {};
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof key !== 'string') continue;
+    if (!Array.isArray(val) || !val.every(v => typeof v === 'string')) continue;
+    result[key] = val as string[];
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function _validatePatterns(raw: unknown, fallback: string[]): string[] {

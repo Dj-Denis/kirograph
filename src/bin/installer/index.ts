@@ -58,7 +58,7 @@ export async function runInstaller(): Promise<void> {
       console.log(`\n  Configuration saved to ${cwd}/.kirograph/config.json`);
       console.log(`  • enableEmbeddings: ${patch.enableEmbeddings}`);
       if ('embeddingModel' in patch) {
-        console.log(`  • embeddingModel: ${patch.embeddingModel}`);
+        console.log(`  • embeddingModel: ${patch.embeddingModel}  ${dim}(${patch.embeddingDim}-dim)${reset}`);
       }
       if (patch.enableEmbeddings) {
         console.log(`  • semanticEngine: ${patch.semanticEngine}`);

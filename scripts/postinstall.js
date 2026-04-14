@@ -25,10 +25,10 @@ async function downloadModel() {
     mkdirSync(MODELS_DIR, { recursive: true });
   }
 
-  // Check if model is already cached
-  const modelCachePath = join(MODELS_DIR, MODEL_ID.replace('/', '/'));
+  // Check if model is already cached.
+  // @xenova/transformers stores models as: <org>--<model> inside the cache dir.
+  const modelCachePath = join(MODELS_DIR, MODEL_ID.replace('/', '--'));
   if (existsSync(modelCachePath)) {
-    console.log(modelCachePath);
     console.log('KiroGraph: Embedding model already downloaded.');
     return;
   }
@@ -38,7 +38,7 @@ async function downloadModel() {
 
   try {
     // Dynamic import for @xenova/transformers (ESM-only package)
-    const { pipeline, env } = await import('@xenova/transformers');
+    const { pipeline, env } = await import('@huggingface/transformers');
 
     // Point cache at ~/.kirograph/models/
     env.cacheDir = MODELS_DIR;
