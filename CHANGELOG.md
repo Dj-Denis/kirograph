@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.8.0] - 2026-04-14
+
+### Added
+
+- `esbuild` + `tsx` replace `tsc` as the build pipeline — ~400ms builds vs ~5-10s
+- `npm run dev` watch mode with incremental rebuilds
+- `npm run typecheck` for type-only validation (`tsc --noEmit`), decoupled from the build
+
+### Changed
+
+- `scripts/build.ts` (TypeScript, executed via `tsx`) replaces the old `tsc && node scripts/copy-assets.js && chmod +x` chain
+- Asset copy (schema.sql, wasm files) and bin chmod are now part of the build script
+- `scripts/copy-assets.js` removed
+- `postinstall` script removed — embedding models are downloaded lazily on first use, making the pre-download unnecessary
+- Embedding model progress bar shown only during `kg install`, not on every command
+- Model download progress aggregated into a single global bar (`X / Y MB`) instead of per-file
+- Noisy `@huggingface/transformers` internal warnings suppressed during model download
+
+### Fixed
+
+- Dynamic `import()` of relative modules rewritten to `Promise.resolve().then(() => require())` at build time, fixing the double-default CJS/ESM wrapping issue
+- Model cache detection updated for `@huggingface/transformers` v3 directory layout (`org/model` instead of `org--model`), preventing re-download on every command
+
+---
+
 ## [0.7.0] - 2026-04-14
 
 ### Added
@@ -24,7 +49,7 @@
 
 ---
 
-## [0.6.0] - 2026-04-14
+## [0.6.0] - 2026-04-13
 
 ### Added
 
@@ -41,7 +66,7 @@
 
 ---
 
-## [0.5.0] - 2026-04-14
+## [0.5.0] - 2026-04-10
 
 ### Added
 
@@ -51,7 +76,7 @@
 
 ---
 
-## [0.4.0] - 2026-04-14
+## [0.4.0] - 2026-04-01
 
 ### Added
 
@@ -68,7 +93,7 @@
 
 ---
 
-## [0.3.5] - 2026-04-14
+## [0.3.5] - 2026-04-07
 
 ### Added
 
@@ -76,7 +101,7 @@
 
 ---
 
-## [0.3.4] - 2026-04-14
+## [0.3.4] - 2026-04-07
 
 ### Added
 
@@ -84,7 +109,7 @@
 
 ---
 
-## [0.3.3] - 2026-04-14
+## [0.3.3] - 2026-04-06
 
 ### Added
 
@@ -92,7 +117,7 @@
 
 ---
 
-## [0.3.2] - 2026-04-14
+## [0.3.2] - 2026-04-01
 
 ### Added
 
@@ -100,7 +125,7 @@
 
 ---
 
-## [0.3.1] - 2026-04-14
+## [0.3.1] - 2026-03-31
 
 ### Added
 
@@ -108,7 +133,7 @@
 
 ---
 
-## [0.3.0] - 2026-04-14
+## [0.3.0] - 2026-03-31
 
 ### Added
 
@@ -122,7 +147,7 @@
 
 ---
 
-## [0.2.0] - 2026-04-14
+## [0.2.0] - 2026-03-30
 
 ### Added
 
@@ -133,7 +158,7 @@
 
 ---
 
-## [0.1.0] - 2026-04-14
+## [0.1.0] - 2026-03-27
 
 ### Added
 
@@ -148,6 +173,7 @@
 - MCP tools: `kirograph_context`, `kirograph_search`, `kirograph_callers`, `kirograph_callees`, `kirograph_impact`, `kirograph_node`, `kirograph_type_hierarchy`, `kirograph_path`, `kirograph_dead_code`, `kirograph_circular_deps`, `kirograph_files`, `kirograph_status`
 - CLI: `kirograph index`, `kirograph sync`, `kirograph query`, `kirograph context`, `kirograph files`, `kirograph affected`, `kirograph status`, `kirograph unlock`
 
+[0.8.0]: https://github.com/davide-desio-eleva/kirograph/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/davide-desio-eleva/kirograph/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/davide-desio-eleva/kirograph/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/davide-desio-eleva/kirograph/compare/v0.4.0...v0.5.0

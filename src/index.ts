@@ -60,7 +60,11 @@ export default class KiroGraph {
 
   // ── Factory ────────────────────────────────────────────────────────────────
 
-  static async init(projectRoot: string, config?: Partial<KiroGraphConfig>): Promise<KiroGraph> {
+  static async init(
+    projectRoot: string,
+    config?: Partial<KiroGraphConfig>,
+    onModelProgress?: (file: string, loaded: number, total: number, done: boolean) => void,
+  ): Promise<KiroGraph> {
     const resolved = path.resolve(projectRoot);
     validateProjectPath(resolved);
     fs.mkdirSync(path.join(resolved, KIROGRAPH_DIR), { recursive: true });
@@ -68,11 +72,14 @@ export default class KiroGraph {
     await saveConfig(resolved, cfg);
     const db = new GraphDatabase(resolved);
     const kg = new KiroGraph(resolved, db, cfg);
-    await kg.vectors.initialize();
+    await kg.vectors.initialize(onModelProgress);
     return kg;
   }
 
-  static async open(projectRoot: string): Promise<KiroGraph> {
+  static async open(
+    projectRoot: string,
+    onModelProgress?: (file: string, loaded: number, total: number, done: boolean) => void,
+  ): Promise<KiroGraph> {
     const resolved = path.resolve(projectRoot);
     validateProjectPath(resolved);
     if (!fs.existsSync(path.join(resolved, KIROGRAPH_DIR))) {
@@ -81,7 +88,7 @@ export default class KiroGraph {
     const cfg = await loadConfig(resolved);
     const db = new GraphDatabase(resolved);
     const kg = new KiroGraph(resolved, db, cfg);
-    await kg.vectors.initialize();
+    await kg.vectors.initialize(onModelProgress);
     return kg;
   }
 

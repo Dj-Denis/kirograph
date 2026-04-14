@@ -119,7 +119,7 @@ export class VectorManager {
    * Fails silently so callers can continue without semantic search.
    * When config.useVecIndex is true, also initializes the sqlite-vec ANN index.
    */
-  async initialize(): Promise<void> {
+  async initialize(onProgress?: (file: string, loaded: number, total: number, done: boolean) => void): Promise<void> {
     if (!this.config.enableEmbeddings) {
       logDebug('VectorManager: embeddings disabled');
       return;
@@ -143,10 +143,25 @@ export class VectorManager {
       }
 
       // Skip remote check if model already cached (HuggingFace uses '--' as path separator)
-      const cached = fs.existsSync(path.join(cacheDir, modelId.replace('/', '--')));
+      // HuggingFace transformers v3 stores models as <org>/<model>/ (v2 used <org>--<model>)
+      const cached = fs.existsSync(path.join(cacheDir, modelId));
       if (cached) env.allowRemoteModels = false;
 
-      this.pipeline = await pipeline('feature-extraction', modelId, { dtype: 'auto' });
+      let lastFile = '';
+      this.pipeline = await pipeline('feature-extraction', modelId, {
+        dtype: 'auto',
+        ...(!cached && onProgress ? {
+          progress_callback: (p: { status: string; file?: string; loaded?: number; total?: number }) => {
+            if (p.status === 'progress' && p.file) {
+              lastFile = p.file;
+              onProgress(p.file, p.loaded ?? 0, p.total ?? 0, false);
+            } else if (p.status === 'done' && lastFile) {
+              onProgress(lastFile, 1, 1, true);
+              lastFile = '';
+            }
+          },
+        } : {}),
+      });
 
       // Validate embeddingDim against the model's actual output shape.
       // Run a single test embedding and compare dims[1] to config.embeddingDim.
