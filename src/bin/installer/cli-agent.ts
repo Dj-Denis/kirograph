@@ -14,6 +14,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { buildCavemanCliHook } from './caveman';
 
 const KIROGRAPH_TOOLS = [
   '@kirograph/kirograph_search',
@@ -101,7 +102,7 @@ const AGENT_CONFIG = {
   allowedTools: KIROGRAPH_TOOLS,
   includeMcpJson: true,
   hooks: {
-    agentSpawn: [{ command: SYNC_CMD }],
+    agentSpawn: [buildCavemanCliHook(), { command: SYNC_CMD }],
     userPromptSubmit: [{ command: SYNC_CMD }],
     stop: [{ command: SYNC_CMD }],
   },

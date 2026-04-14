@@ -40,6 +40,8 @@ export interface KiroGraphConfig {
    * Example: { "api": ["src/routes/**", "src/controllers/**"] }
    */
   architectureLayers?: Record<string, string[]>;
+  /** Agent communication style injected at agentSpawn. Default: 'off'. */
+  cavemanMode: 'off' | 'lite' | 'full' | 'ultra';
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -52,7 +54,7 @@ const KNOWN_FIELDS = new Set<string>([
   'extractDocstrings', 'trackCallSites', 'enableEmbeddings', 'embeddingModel', 'embeddingDim',
   'useVecIndex', 'semanticEngine', 'typesenseDashboard', 'qdrantDashboard',
   'minLogLevel', 'frameworkHints', 'fuzzyResolutionThreshold',
-  'enableArchitecture', 'architectureLayers',
+  'enableArchitecture', 'architectureLayers', 'cavemanMode',
 ]);
 
 const LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
@@ -94,6 +96,7 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     frameworkHints: [],
     fuzzyResolutionThreshold: 0.5,
     enableArchitecture: false,
+    cavemanMode: 'off',
   };
 }
 
@@ -167,6 +170,10 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     ? raw.enableArchitecture
     : defaults.enableArchitecture;
   const architectureLayers = _validateArchitectureLayers(raw.architectureLayers);
+  const CAVEMAN_MODES = new Set(['off', 'lite', 'full', 'ultra']);
+  const cavemanMode = typeof raw.cavemanMode === 'string' && CAVEMAN_MODES.has(raw.cavemanMode)
+    ? (raw.cavemanMode as KiroGraphConfig['cavemanMode'])
+    : defaults.cavemanMode;
 
   // Validate glob patterns — exclude unsafe regex patterns
   const include = _validatePatterns(raw.include, defaults.include);
@@ -191,6 +198,7 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     frameworkHints,
     fuzzyResolutionThreshold,
     enableArchitecture,
+    cavemanMode,
     ...(architectureLayers !== undefined ? { architectureLayers } : {}),
   };
 }

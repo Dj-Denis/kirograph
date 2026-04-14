@@ -45,8 +45,7 @@ export async function runInstaller(): Promise<void> {
     // 2. IDE hooks
     writeHooks(kiroDir);
 
-    // 3. Steering (IDE + CLI)
-    writeSteering(kiroDir);
+    // 3. Steering written after config prompt (needs cavemanMode) — deferred below
 
     // 4. CLI agent config
     writeCliAgent(kiroDir);
@@ -122,6 +121,10 @@ export async function runInstaller(): Promise<void> {
       console.log(`  • extractDocstrings: ${patch.extractDocstrings}`);
       console.log(`  • trackCallSites: ${patch.trackCallSites}`);
       console.log(`  • enableArchitecture: ${patch.enableArchitecture}`);
+      console.log(`  • cavemanMode: ${patch.cavemanMode ?? 'off'}`);
+
+    // 3. Steering (IDE + CLI) — written here so it includes cavemanMode
+    writeSteering(kiroDir, patch.cavemanMode ?? 'off');
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       console.error(`\n  ✗ Failed to write configuration: ${reason}`);

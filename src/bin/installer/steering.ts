@@ -4,6 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { CAVEMAN_RULES, CavemanMode } from './caveman';
 
 const STEERING_CONTENT = `---
 inclusion: always
@@ -66,10 +67,16 @@ Use KiroGraph MCP tools for exploration instead of grep/glob/file reads:
 Ask the user: "This project doesn't have KiroGraph initialized. Run \`kirograph init -i\` to build a code knowledge graph for faster exploration?"
 `;
 
-export function writeSteering(kiroDir: string): void {
+function buildSteeringContent(cavemanMode?: CavemanMode | 'off'): string {
+  const caveman = cavemanMode && cavemanMode !== 'off' ? CAVEMAN_RULES[cavemanMode] : null;
+  if (!caveman) return STEERING_CONTENT;
+  return STEERING_CONTENT.trimEnd() + '\n\n' + caveman + '\n';
+}
+
+export function writeSteering(kiroDir: string, cavemanMode?: CavemanMode | 'off'): void {
   const steeringDir = path.join(kiroDir, 'steering');
   fs.mkdirSync(steeringDir, { recursive: true });
   const steeringPath = path.join(steeringDir, 'kirograph.md');
-  fs.writeFileSync(steeringPath, STEERING_CONTENT);
+  fs.writeFileSync(steeringPath, buildSteeringContent(cavemanMode));
   console.log(`  ✓ Steering file written to ${steeringPath}`);
 }

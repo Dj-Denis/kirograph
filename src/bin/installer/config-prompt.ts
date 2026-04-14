@@ -5,8 +5,7 @@
 import * as readline from 'readline';
 import { KiroGraphConfig } from '../../config';
 import { ask, askBool, arrowSelect, dim, reset, violet } from './prompts';
-
-export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture'> & { embeddingModel?: string; embeddingDim?: number };
+export type ConfigPatch = Pick<KiroGraphConfig, 'enableEmbeddings' | 'useVecIndex' | 'semanticEngine' | 'typesenseDashboard' | 'qdrantDashboard' | 'extractDocstrings' | 'trackCallSites' | 'enableArchitecture' | 'cavemanMode'> & { embeddingModel?: string; embeddingDim?: number };
 export type SemanticEngine = KiroGraphConfig['semanticEngine'];
 
 export const DEFAULT_EMBEDDING_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
@@ -135,6 +134,14 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
     'Enable architecture analysis (package graph + layer detection)?',
     'Detects packages from manifests (package.json, go.mod, Cargo.toml, etc.) and architectural layers (api, service, data, ui, shared) from file structure. Enables kirograph_architecture, kirograph_coupling, and kirograph_package MCP tools.',
   );
+
+  const cavemanChoice = await arrowSelect(rl, 'Caveman mode — agent communication style:', [
+    { value: 'off',   label: 'off',   description: 'Normal responses' },
+    { value: 'lite',  label: 'lite',  description: 'Compact, no filler, full sentences' },
+    { value: 'full',  label: 'full',  description: 'Fragments, no articles, short synonyms' },
+    { value: 'ultra', label: 'ultra', description: 'Max compression, abbreviations, → for causality' },
+  ]);
+  patch.cavemanMode = cavemanChoice as CavemanMode | 'off';
 
   return patch;
 }
