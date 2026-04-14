@@ -33,7 +33,7 @@ export function printColoredHelp(): void {
     { name: 'architecture',  args: '[path]',    desc: 'Show package graph and layer map',  opts: ['--packages   Show packages only', '--layers     Show layers only', '--format <f> json'] },
     { name: 'coupling',      args: '[path]',    desc: 'Show coupling metrics per package', opts: ['--sort <s>   instability|ca|ce|name', '--package <n> Detail view for one package', '--format <f> json'] },
     { name: 'package',       args: '<name>',    desc: 'Inspect a package (deps, files, metrics)', opts: ['--no-files   Omit file list', '--format <f> json'] },
-    { name: 'caveman',       args: '[mode]',    desc: 'Set agent communication style (off | lite | full | ultra)', opts: ['--inject     Print rules to stdout (used by agentSpawn hook)'] },
+    { name: 'caveman',       args: '[mode]',    desc: 'Set agent communication style (off | lite | full | ultra)' },
   ];
 
   console.log(`\n${c.bold}${c.paleLavender}USAGE${c.reset}`);

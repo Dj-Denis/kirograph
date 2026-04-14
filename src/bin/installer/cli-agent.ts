@@ -14,7 +14,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildCavemanCliHook } from './caveman';
+import { CAVEMAN_RULES, CavemanMode } from './caveman';
 
 const KIROGRAPH_TOOLS = [
   '@kirograph/kirograph_search',
@@ -94,19 +94,23 @@ Use KiroGraph MCP tools for exploration instead of grep/glob/file reads:
 Tell the user: "This project doesn't have KiroGraph initialized. Run \`kirograph init --index\` to build a code knowledge graph for faster exploration."
 `;
 
-const AGENT_CONFIG = {
-  name: 'kirograph',
-  description: 'KiroGraph-aware agent — uses the semantic code graph for faster, smarter exploration.',
-  prompt: AGENT_PROMPT,
-  tools: ['*'],
-  allowedTools: KIROGRAPH_TOOLS,
-  includeMcpJson: true,
-  hooks: {
-    agentSpawn: [buildCavemanCliHook(), { command: SYNC_CMD }],
-    userPromptSubmit: [{ command: SYNC_CMD }],
-    stop: [{ command: SYNC_CMD }],
-  },
-};
+function buildAgentConfig(cavemanMode?: CavemanMode | 'off') {
+  const caveman = cavemanMode && cavemanMode !== 'off' ? CAVEMAN_RULES[cavemanMode] : null;
+  const prompt = caveman ? AGENT_PROMPT.trimEnd() + '\n\n' + caveman + '\n' : AGENT_PROMPT;
+  return {
+    name: 'kirograph',
+    description: 'KiroGraph-aware agent — uses the semantic code graph for faster, smarter exploration.',
+    prompt,
+    tools: ['*'],
+    allowedTools: KIROGRAPH_TOOLS,
+    includeMcpJson: true,
+    hooks: {
+      agentSpawn: [{ command: SYNC_CMD }],
+      userPromptSubmit: [{ command: SYNC_CMD }],
+      stop: [{ command: SYNC_CMD }],
+    },
+  };
+}
 
 function ensureDir(p: string): void {
   fs.mkdirSync(p, { recursive: true });
@@ -116,10 +120,10 @@ function writeJson(p: string, data: unknown): void {
   fs.writeFileSync(p, JSON.stringify(data, null, 2) + '\n');
 }
 
-export function writeCliAgent(kiroDir: string): void {
+export function writeCliAgent(kiroDir: string, cavemanMode?: CavemanMode | 'off'): void {
   const agentsDir = path.join(kiroDir, 'agents');
   ensureDir(agentsDir);
   const agentPath = path.join(agentsDir, 'kirograph.json');
-  writeJson(agentPath, AGENT_CONFIG);
+  writeJson(agentPath, buildAgentConfig(cavemanMode));
   console.log(`  ✓ CLI agent config written to ${agentPath}`);
 }

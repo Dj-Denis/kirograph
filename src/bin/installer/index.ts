@@ -47,10 +47,7 @@ export async function runInstaller(): Promise<void> {
 
     // 3. Steering written after config prompt (needs cavemanMode) — deferred below
 
-    // 4. CLI agent config
-    writeCliAgent(kiroDir);
-
-    // 4. Prompt for config options and persist
+    // 3b. Prompt for config options and persist
     const patch = await promptConfigOptions(rl);
     try {
       await updateConfig(cwd, patch);
@@ -123,8 +120,11 @@ export async function runInstaller(): Promise<void> {
       console.log(`  • enableArchitecture: ${patch.enableArchitecture}`);
       console.log(`  • cavemanMode: ${patch.cavemanMode ?? 'off'}`);
 
-    // 3. Steering (IDE + CLI) — written here so it includes cavemanMode
+    // 3. Steering + CLI agent — written here so they include cavemanMode
     writeSteering(kiroDir, patch.cavemanMode ?? 'off');
+
+    // 4. CLI agent config (after config prompt so it includes cavemanMode)
+    writeCliAgent(kiroDir, patch.cavemanMode ?? 'off');
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       console.error(`\n  ✗ Failed to write configuration: ${reason}`);

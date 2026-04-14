@@ -2,9 +2,10 @@
  * KiroGraph — Caveman mode support
  *
  * Mode stored in .kirograph/config.json as `cavemanMode`.
- * Hook command: kirograph caveman --inject
- *   → reads config, prints rules to STDOUT
- *   → Kiro injects STDOUT into agent context on agentSpawn
+ * Rules are injected into:
+ *  - .kiro/steering/kirograph.md  (IDE, inclusion: always)
+ *  - .kiro/agents/kirograph.json  (kiro-cli, inline prompt)
+ * No hooks needed — steering is always included.
  */
 
 export type CavemanMode = 'off' | 'lite' | 'full' | 'ultra';
@@ -42,20 +43,3 @@ Pattern: [thing] → [action]. [fix].
 Example: "auth middleware → token check \`<\` not \`<=\`. Fix L42."`,
 };
 
-// ── Hook definitions ──────────────────────────────────────────────────────────
-
-const INJECT_CMD = 'kirograph caveman --inject 2>/dev/null || true';
-
-export function buildCavemanHook(): object {
-  return {
-    name: 'KiroGraph Caveman Mode',
-    version: '1.0.0',
-    description: 'Injects caveman communication style rules into the agent context at session start.',
-    when: { type: 'agentSpawn' },
-    then: { type: 'runCommand', command: INJECT_CMD },
-  };
-}
-
-export function buildCavemanCliHook(): { command: string } {
-  return { command: INJECT_CMD };
-}

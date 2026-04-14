@@ -50,7 +50,6 @@ async function runUninit(projectPath: string | undefined, opts: { force?: boolea
     'kirograph-sync-if-dirty.json',
     'kirograph-sync-on-save.json',
     'kirograph-sync-on-create.json',
-    'kirograph-caveman.json',
   ];
   const hooksDir = path.join(target, '.kiro', 'hooks');
   let removedHooks = 0;

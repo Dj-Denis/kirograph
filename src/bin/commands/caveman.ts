@@ -1,6 +1,5 @@
 /**
  * kg caveman [off|lite|full|ultra]   — set caveman mode for this project
- * kg caveman --inject                — print rules to stdout (used by agentSpawn hook)
  * kg caveman                        — show current mode
  */
 
@@ -10,26 +9,14 @@ import { Command } from 'commander';
 import { loadConfig, updateConfig } from '../../config';
 import { CAVEMAN_RULES, CavemanMode } from '../installer/caveman';
 import { writeSteering } from '../installer/steering';
+import { writeCliAgent } from '../installer/cli-agent';
 
 export function register(program: Command): void {
   program
     .command('caveman [mode]')
     .description('Set caveman communication style for the Kiro agent (off | lite | full | ultra)')
-    .option('--inject', 'Print rules to stdout for hook injection (used internally by agentSpawn)')
-    .action(async (mode: string | undefined, opts: { inject?: boolean }) => {
+    .action(async (mode: string | undefined) => {
       const cwd = process.cwd();
-
-      // --inject: read config, print rules to stdout, exit silently
-      if (opts.inject) {
-        try {
-          const config = await loadConfig(cwd);
-          const m = config.cavemanMode;
-          if (m && m !== 'off' && CAVEMAN_RULES[m]) {
-            process.stdout.write(CAVEMAN_RULES[m] + '\n');
-          }
-        } catch { /* no .kirograph/ — no output */ }
-        return;
-      }
 
       // No mode argument: show current status
       if (!mode) {
@@ -59,10 +46,18 @@ export function register(program: Command): void {
 
       await updateConfig(cwd, { cavemanMode: normalized as CavemanMode | 'off' });
 
+      const kiroDir = path.join(cwd, '.kiro');
+
       // Regenerate steering file if .kiro/steering/kirograph.md exists
-      const steeringPath = path.join(cwd, '.kiro', 'steering', 'kirograph.md');
+      const steeringPath = path.join(kiroDir, 'steering', 'kirograph.md');
       if (fs.existsSync(steeringPath)) {
-        writeSteering(path.join(cwd, '.kiro'), normalized as CavemanMode | 'off');
+        writeSteering(kiroDir, normalized as CavemanMode | 'off');
+      }
+
+      // Regenerate CLI agent config if .kiro/agents/kirograph.json exists
+      const agentPath = path.join(kiroDir, 'agents', 'kirograph.json');
+      if (fs.existsSync(agentPath)) {
+        writeCliAgent(kiroDir, normalized as CavemanMode | 'off');
       }
 
       if (normalized === 'off') {

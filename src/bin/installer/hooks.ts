@@ -5,7 +5,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { logWarn } from '../../errors';
-import { buildCavemanHook } from './caveman';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -121,8 +120,6 @@ export function writeHooks(kiroDir: string): void {
   for (const { filename, hook } of HOOKS) {
     writeJson(path.join(hooksDir, filename), hook);
   }
-
-  writeJson(path.join(hooksDir, 'kirograph-caveman.json'), buildCavemanHook());
 
   console.log(`  ✓ Auto-sync hooks written to ${hooksDir}`);
 }
