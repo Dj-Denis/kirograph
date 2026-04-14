@@ -147,8 +147,27 @@ export class VectorManager {
       if (cached) env.allowRemoteModels = false;
 
       this.pipeline = await pipeline('feature-extraction', modelId, { dtype: 'auto' });
+
+      // Validate embeddingDim against the model's actual output shape.
+      // Run a single test embedding and compare dims[1] to config.embeddingDim.
+      // If they differ, warn and update the runtime dim so downstream engines
+      // are initialised with the correct size (config.json is not rewritten here).
+      try {
+        const testOut = await this.pipeline('test', { pooling: 'mean', normalize: true });
+        const actualDim: number = testOut.dims?.[1] ?? (testOut.data?.length as number);
+        const configuredDim = this.config.embeddingDim ?? DEFAULT_EMBEDDING_DIM;
+        if (actualDim && actualDim !== configuredDim) {
+          logWarn(
+            `VectorManager: embeddingDim mismatch — config says ${configuredDim} but model outputs ${actualDim}. Using actual dim.`,
+            { model: modelId, configuredDim, actualDim },
+          );
+          // Patch the runtime config so all engine constructors below use the correct dim
+          (this.config as unknown as Record<string, unknown>).embeddingDim = actualDim;
+        }
+      } catch { /* test embedding failed — proceed with configured dim */ }
+
       this._initialized = true;
-      logDebug('VectorManager: model loaded', { modelId });
+      logDebug('VectorManager: model loaded', { modelId, embeddingDim: this.config.embeddingDim ?? DEFAULT_EMBEDDING_DIM });
     } catch (err) {
       logError('VectorManager: failed to load embedding model', {
         model: modelId,

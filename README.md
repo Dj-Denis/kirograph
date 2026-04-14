@@ -581,8 +581,9 @@ KiroGraph stores its config in `.kirograph/config.json`. You can edit it directl
 | `maxFileSize` | number | `1048576` | Skip files larger than this (bytes) |
 | `extractDocstrings` | boolean | `true` | Extract JSDoc, docstrings, and comments |
 | `trackCallSites` | boolean | `true` | Record line/column for call edges |
-| `enableEmbeddings` | boolean | `false` | Generate semantic embeddings (opt-in, ~130MB model) |
-| `embeddingModel` | string | `nomic-ai/nomic-embed-text-v1.5` | HuggingFace model for embeddings |
+| `enableEmbeddings` | boolean | `false` | Generate semantic embeddings (opt-in) |
+| `embeddingModel` | string | `nomic-ai/nomic-embed-text-v1.5` | HuggingFace `feature-extraction` model ID |
+| `embeddingDim` | number | `768` | Output dimension of the chosen embedding model |
 | `semanticEngine` | string | `cosine` | Search engine: `cosine`, `sqlite-vec`, `orama`, `pglite`, `lancedb`, `qdrant`, or `typesense` |
 | `useVecIndex` | boolean | `false` | Deprecated alias for `semanticEngine: "sqlite-vec"` |
 | `enableArchitecture` | boolean | `false` | Enable architecture analysis (package graph + layer detection, opt-in) |
@@ -602,9 +603,33 @@ By default, KiroGraph uses exact name lookup and full-text search. Enable semant
 }
 ```
 
-This downloads the `nomic-ai/nomic-embed-text-v1.5` model (~130MB) to `~/.kirograph/models/` on first use and generates 768-dimensional vector embeddings for all functions, methods, classes, interfaces, type aliases, components, and modules. Embeddings are kept in sync automatically via Kiro hooks — on every file save, create, or delete.
+This generates vector embeddings for all functions, methods, classes, interfaces, type aliases, components, and modules using a local embedding model (downloaded automatically to `~/.kirograph/models/` on first use). Embeddings are kept in sync automatically via Kiro hooks — on every file save, create, or delete.
 
-Run `kirograph install` to be guided through engine selection interactively with an arrow-key menu, or set `semanticEngine` in `.kirograph/config.json` manually.
+Run `kirograph install` to be guided through model and engine selection interactively with arrow-key menus, or set the fields manually in `.kirograph/config.json`.
+
+#### Embedding models
+
+`kirograph install` offers a curated selection of models compatible with `@huggingface/transformers`:
+
+| Model | Dim | Size | Notes |
+|-------|-----|------|-------|
+| `nomic-ai/nomic-embed-text-v1.5` | 768 | ~130MB | **Default.** Best quality for code search. |
+| `onnx-community/embeddinggemma-300m-ONNX` | 768 | ~300MB | Google Gemma-based. Multilingual, 2048-token context window. |
+| `Xenova/all-MiniLM-L6-v2` | 384 | ~23MB | Lightweight, fast. Lower accuracy. |
+| `BAAI/bge-base-en-v1.5` | 768 | ~110MB | Strong general-purpose alternative to nomic. |
+| Custom | any | — | Any HuggingFace `feature-extraction` model. Provide ID + output dimension. |
+
+The embedding dimension is stored in `embeddingDim` in `.kirograph/config.json` and used to initialise all vector engines correctly. Switching models requires a full re-index (`kirograph index --force`).
+
+Configure manually:
+
+```json
+{
+  "enableEmbeddings": true,
+  "embeddingModel": "onnx-community/embeddinggemma-300m-ONNX",
+  "embeddingDim": 768
+}
+```
 
 #### Storage architecture
 
