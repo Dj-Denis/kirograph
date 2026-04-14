@@ -1,7 +1,7 @@
 /**
  * KiroGraph Vector Manager
  *
- * Semantic search using nomic-ai/nomic-embed-text-v1.5 via @xenova/transformers.
+ * Semantic search via configurable local embedding models using @huggingface/transformers v3.
  * Mirrors CodeGraph src/vectors/ (embedder.ts + manager.ts) adapted for KiroGraph:
  *   - Cache dir: ~/.kirograph/models/ (not ~/.codegraph/models/)
  *   - Embeddings stored in the `vectors` SQLite table

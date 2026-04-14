@@ -49,7 +49,7 @@ export async function promptConfigOptions(rl: readline.Interface): Promise<Confi
   const enableEmbeddings = await askBool(
     rl,
     'Enable semantic embeddings for similarity search? (requires a local embedding model)',
-    'Enables semantic/similarity-based code search. Increases indexing time and requires a compatible local embedding model (downloaded automatically via @xenova/transformers).',
+    'Enables semantic/similarity-based code search. Increases indexing time; the chosen embedding model is downloaded automatically on first use.',
   );
 
   const patch: ConfigPatch = { enableEmbeddings, useVecIndex: false, semanticEngine: 'cosine', typesenseDashboard: false, qdrantDashboard: false, extractDocstrings: true, trackCallSites: true, enableArchitecture: false };
