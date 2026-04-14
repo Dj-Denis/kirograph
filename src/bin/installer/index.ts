@@ -149,10 +149,18 @@ export async function runInstaller(): Promise<void> {
       cg.close();
 
       if (patch.typesenseDashboard) {
-        await openTypesenseDashboard(cwd);
+        const dashboardServer = await openTypesenseDashboard(cwd);
         console.log(`  ${dim}Press Ctrl+C to stop the dashboard server when done.${reset}`);
-        process.on('SIGINT', () => { rl.close(); process.exit(0); });
-        return; // rl.close() handled via SIGINT
+        await new Promise<void>(resolve => {
+          process.on('SIGINT', () => {
+            if (dashboardServer) {
+              dashboardServer.close(() => resolve());
+            } else {
+              resolve();
+            }
+          });
+        });
+        return; // rl.close() handled in finally
       }
 
       if (patch.qdrantDashboard) {

@@ -24,8 +24,6 @@ export interface KiroGraphConfig {
   enableEmbeddings: boolean;
   embeddingModel: string;
   embeddingDim: number;
-  enableArchitecture: boolean;
-  architectureLayers?: Record<string, string[]>;
   /** @deprecated Use semanticEngine instead. Kept for backwards compatibility. */
   useVecIndex: boolean;
   semanticEngine: 'cosine' | 'sqlite-vec' | 'orama' | 'pglite' | 'lancedb' | 'qdrant' | 'typesense';
@@ -51,8 +49,9 @@ const CONFIG_FILE = 'config.json';
 
 const KNOWN_FIELDS = new Set<string>([
   'version', 'languages', 'include', 'exclude', 'maxFileSize',
-  'extractDocstrings', 'trackCallSites', 'enableEmbeddings', 'embeddingModel', 'embeddingDim', 'useVecIndex', 'semanticEngine',
-  'typesenseDashboard', 'qdrantDashboard', 'minLogLevel', 'frameworkHints', 'fuzzyResolutionThreshold',
+  'extractDocstrings', 'trackCallSites', 'enableEmbeddings', 'embeddingModel', 'embeddingDim',
+  'useVecIndex', 'semanticEngine', 'typesenseDashboard', 'qdrantDashboard',
+  'minLogLevel', 'frameworkHints', 'fuzzyResolutionThreshold',
   'enableArchitecture', 'architectureLayers',
 ]);
 
@@ -87,7 +86,6 @@ export function createDefaultConfig(_projectRoot?: string): KiroGraphConfig {
     enableEmbeddings: false,
     embeddingModel: 'nomic-ai/nomic-embed-text-v1.5',
     embeddingDim: 768,
-    enableArchitecture: false,
     useVecIndex: false,
     semanticEngine: 'cosine',
     typesenseDashboard: false,
@@ -140,19 +138,14 @@ export function validateConfig(config: unknown): KiroGraphConfig {
   const embeddingDim = typeof raw.embeddingDim === 'number' && raw.embeddingDim > 0
     ? raw.embeddingDim
     : defaults.embeddingDim;
-  const enableArchitecture = typeof raw.enableArchitecture === 'boolean'
-    ? raw.enableArchitecture
-    : defaults.enableArchitecture;
-  const architectureLayers = _validateArchitectureLayers(raw.architectureLayers);
   const useVecIndex = typeof raw.useVecIndex === 'boolean'
     ? raw.useVecIndex
     : defaults.useVecIndex;
   const SEMANTIC_ENGINES = new Set(['cosine', 'sqlite-vec', 'orama', 'pglite', 'lancedb', 'qdrant', 'typesense']);
   // useVecIndex is a legacy alias: if set and no explicit semanticEngine, map it
-  const rawEngine = typeof raw.semanticEngine === 'string' && SEMANTIC_ENGINES.has(raw.semanticEngine)
+  const semanticEngine = typeof raw.semanticEngine === 'string' && SEMANTIC_ENGINES.has(raw.semanticEngine)
     ? (raw.semanticEngine as KiroGraphConfig['semanticEngine'])
     : useVecIndex ? 'sqlite-vec' : defaults.semanticEngine;
-  const semanticEngine = rawEngine;
   const typesenseDashboard = typeof raw.typesenseDashboard === 'boolean'
     ? raw.typesenseDashboard
     : defaults.typesenseDashboard;
@@ -170,11 +163,9 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     && raw.fuzzyResolutionThreshold <= 1
     ? raw.fuzzyResolutionThreshold
     : defaults.fuzzyResolutionThreshold;
-
   const enableArchitecture = typeof raw.enableArchitecture === 'boolean'
     ? raw.enableArchitecture
     : defaults.enableArchitecture;
-
   const architectureLayers = _validateArchitectureLayers(raw.architectureLayers);
 
   // Validate glob patterns — exclude unsafe regex patterns
@@ -192,8 +183,6 @@ export function validateConfig(config: unknown): KiroGraphConfig {
     enableEmbeddings,
     embeddingModel,
     embeddingDim,
-    enableArchitecture,
-    ...(architectureLayers !== undefined ? { architectureLayers } : {}),
     useVecIndex,
     semanticEngine,
     typesenseDashboard,

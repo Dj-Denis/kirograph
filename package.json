@@ -35,7 +35,7 @@
     "node-sqlite3-wasm": "^0.8.30",
     "picomatch": "^4.0.3",
     "tree-sitter-wasms": "^0.1.11",
-    "typesense": "^3.0.4",
+    "typesense": "^3.0.5",
     "web-tree-sitter": "^0.25.3"
   },
   "optionalDependencies": {
