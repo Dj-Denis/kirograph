@@ -123,8 +123,8 @@ export async function runInstaller(): Promise<void> {
     // 3. Steering + CLI agent — written here so they include cavemanMode
     writeSteering(kiroDir, patch.cavemanMode ?? 'off');
 
-    // 4. CLI agent config (after config prompt so it includes cavemanMode)
-    writeCliAgent(kiroDir, patch.cavemanMode ?? 'off');
+    // 4. CLI agent config
+    writeCliAgent(kiroDir);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       console.error(`\n  ✗ Failed to write configuration: ${reason}`);

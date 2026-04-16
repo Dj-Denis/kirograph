@@ -492,6 +492,8 @@ fi
 
 ### 🪨 Caveman Mode 🪨
 
+![KiroGraph caveman](assets/caveman.png)
+
 Caveman mode compresses the agent's communication style, cutting token usage on responses without affecting tool calls or code output. Inspired by [caveman](https://github.com/JuliusBrussee/caveman) 🪨 by [JuliusBrussee](https://github.com/JuliusBrussee).
 
 **Why it's useful:** KiroGraph's graph tools return compact, structured data. The bottleneck in long coding sessions isn't the tool calls — it's the verbose prose the agent wraps around them. Caveman mode strips that overhead so you get the signal without the filler. The rules are injected at session start via the steering file (IDE) and the inline agent prompt (kiro-cli), so they're always in context with no extra tool calls.

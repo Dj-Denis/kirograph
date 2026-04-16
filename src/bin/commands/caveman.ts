@@ -91,7 +91,7 @@ export function register(program: Command): void {
       // Regenerate CLI agent config if .kiro/agents/kirograph.json exists
       const agentPath = path.join(kiroDir, 'agents', 'kirograph.json');
       if (fs.existsSync(agentPath)) {
-        writeCliAgent(kiroDir, normalized as CavemanMode | 'off');
+        writeCliAgent(kiroDir);
       }
 
       console.log();
