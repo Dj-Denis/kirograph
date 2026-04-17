@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.10.0] - 2026-04-17
+
+### Added
+
+- `kirograph_hotspots` MCP tool — finds the most-connected symbols by total edge degree (in + out, excluding `contains`); rendered with an inline bar chart showing in/out breakdown
+- `kirograph_surprising` MCP tool — finds non-obvious cross-file connections scored by path distance × edge-kind weight (`calls=1.0`, `references=0.8`, `type_of=0.7`, etc.)
+- `kirograph_diff` MCP tool — compares the current graph against a saved snapshot; shows added/removed symbols and edges
+- `kirograph hotspots` CLI command — table output with proportional bar chart; `--limit`, `--format json`
+- `kirograph surprising` CLI command — ranked list of unexpected cross-module links; `--limit`, `--format json`
+- `kirograph snapshot save|list|diff` CLI commands — save lightweight graph snapshots to `.kirograph/snapshots/`, list them, and diff current graph vs any snapshot; `--format full|json`
+- `SnapshotManager` in `src/core/snapshot.ts` — save/load/diff logic; diffs computed as O(n) set operations on node ID and edge tuple sets
+- `findHotspots()` and `findSurprisingConnections()` on `GraphDatabase`; `getAllEdges()` for snapshot capture
+
+---
+
 ## [0.9.0] - 2026-04-16
 
 ### Added
@@ -190,6 +205,7 @@
 - MCP tools: `kirograph_context`, `kirograph_search`, `kirograph_callers`, `kirograph_callees`, `kirograph_impact`, `kirograph_node`, `kirograph_type_hierarchy`, `kirograph_path`, `kirograph_dead_code`, `kirograph_circular_deps`, `kirograph_files`, `kirograph_status`
 - CLI: `kirograph index`, `kirograph sync`, `kirograph query`, `kirograph context`, `kirograph files`, `kirograph affected`, `kirograph status`, `kirograph unlock`
 
+[0.10.0]: https://github.com/davide-desio-eleva/kirograph/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/davide-desio-eleva/kirograph/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/davide-desio-eleva/kirograph/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/davide-desio-eleva/kirograph/compare/v0.6.0...v0.7.0

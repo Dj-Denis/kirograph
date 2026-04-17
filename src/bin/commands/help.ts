@@ -34,6 +34,9 @@ export function printColoredHelp(): void {
     { name: 'coupling',      args: '[path]',    desc: 'Show coupling metrics per package', opts: ['--sort <s>   instability|ca|ce|name', '--package <n> Detail view for one package', '--format <f> json'] },
     { name: 'package',       args: '<name>',    desc: 'Inspect a package (deps, files, metrics)', opts: ['--no-files   Omit file list', '--format <f> json'] },
     { name: 'caveman',       args: '[mode]',    desc: 'Set agent communication style (off | lite | full | ultra)' },
+    { name: 'hotspots',      args: '[path]',    desc: 'Find most-connected symbols by edge degree',                opts: ['--limit <n>   Max results (default 20)', '--format <f> table | json'] },
+    { name: 'surprising',    args: '[path]',    desc: 'Find non-obvious cross-file connections',                  opts: ['--limit <n>   Max results (default 20)', '--format <f> table | json'] },
+    { name: 'snapshot',      desc: 'Save or list graph snapshots',                                                opts: ['save [label]  Save current graph state', 'list         List saved snapshots', 'diff [label]  Diff current vs snapshot'] },
   ];
 
   console.log(`\n${c.bold}${c.paleLavender}USAGE${c.reset}`);
@@ -78,6 +81,10 @@ export function printColoredHelp(): void {
     ['kirograph package src/auth',                      'Inspect the auth package'],
     ['kirograph caveman full',                          'Enable full caveman mode for the agent'],
     ['kirograph caveman off',                           'Disable caveman mode'],
+    ['kirograph hotspots --limit 10',                   'Show top 10 most-connected symbols'],
+    ['kirograph surprising',                            'Find unexpected cross-module connections'],
+    ['kirograph snapshot save pre-refactor',            'Save a named snapshot before a refactor'],
+    ['kirograph snapshot diff pre-refactor',            'Diff current graph vs the named snapshot'],
   ];
   for (const [ex, desc] of examples) {
     console.log(`  ${c.violet}$${c.reset} ${c.lavender}${ex}${c.reset}`);

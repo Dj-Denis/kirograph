@@ -25,6 +25,9 @@ import { register as registerArchitecture } from './commands/architecture';
 import { register as registerCoupling } from './commands/coupling';
 import { register as registerPackage } from './commands/package';
 import { register as registerCaveman } from './commands/caveman';
+import { register as registerHotspots } from './commands/hotspots';
+import { register as registerSurprising } from './commands/surprising';
+import { register as registerSnapshot } from './commands/snapshot';
 
 const program = new Command();
 
@@ -57,6 +60,9 @@ registerArchitecture(program);
 registerCoupling(program);
 registerPackage(program);
 registerCaveman(program);
+registerHotspots(program);
+registerSurprising(program);
+registerSnapshot(program);
 
 // Show banner + help when called with no arguments, otherwise parse normally
 if (process.argv.length === 2) {

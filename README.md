@@ -1,6 +1,8 @@
+![KiroGraph terminal](assets/logo.png)
+
 # KiroGraph
 
-![KiroGraph terminal](assets/kirograph.png)
+![KiroGraph terminal](assets/terminal.png)
 
 Semantic code knowledge graph for [Kiro](https://kiro.dev): fewer tool calls, instant symbol lookups, 100% local.
 
@@ -395,6 +397,39 @@ Inspect the files and dependencies of a specific package.
 
 Returns: package metadata, all files assigned to the package, packages it depends on (with import counts), and packages that depend on it.
 
+### `kirograph_hotspots`
+
+Find the most-connected symbols by total edge degree (incoming + outgoing). Excludes structural `contains` edges.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | number | 20 | Max results (1–100) |
+| `projectPath` | string | cwd | Project root path |
+
+Returns each symbol with total degree, in-degree, and out-degree. Useful for identifying core abstractions and high blast-radius code before making changes.
+
+### `kirograph_surprising`
+
+Find non-obvious cross-file connections: direct edges between symbols in structurally distant files.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | number | 20 | Max results (1–100) |
+| `projectPath` | string | cwd | Project root path |
+
+**How it works:** Queries all cross-file edges (excluding `contains` and `import`). Scores each by path distance between source and target files × edge-kind weight (`calls=1.0`, `references=0.8`, `type_of=0.7`, etc.). Returns the highest-scoring unique pairs — the ones that represent the most unexpected coupling in the codebase.
+
+### `kirograph_diff`
+
+Compare the current graph state against a saved snapshot. Shows added/removed symbols and edges.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `snapshot` | string | latest | Snapshot label. Omit to use the most recent saved snapshot. |
+| `projectPath` | string | cwd | Project root path |
+
+Use `kirograph snapshot save` (CLI) to save a snapshot before a refactor or PR. Run `kirograph_diff` after to see what changed structurally.
+
 ## CLI Reference
 
 ### Setup
@@ -570,6 +605,48 @@ The table shows each package with:
 - **Instability** — `Ce / (Ca + Ce)`, rendered as a color-coded bar: green (stable) → yellow (neutral) → red (unstable)
 
 The `--package` detail view shows who depends on this package and what it depends on, with import counts for each relationship.
+
+### Hotspots
+
+Find the most-connected symbols in the codebase by total edge degree (incoming + outgoing, excluding structural `contains` edges). Useful for identifying core abstractions, load-bearing code, or high blast-radius change points.
+
+```bash
+kirograph hotspots [path]             # Top 20 most-connected symbols
+kirograph hotspots --limit 10         # Limit results
+kirograph hotspots --format json      # JSON output
+```
+
+Output shows each symbol with an inline bar chart, total degree, and in/out breakdown.
+
+### Surprising Connections
+
+Find non-obvious cross-file connections: direct edges (`calls`, `references`, etc.) between symbols in structurally distant parts of the codebase. High-score pairs indicate unexpected coupling worth investigating.
+
+```bash
+kirograph surprising [path]           # Top 20 surprising connections
+kirograph surprising --limit 10       # Limit results
+kirograph surprising --format json    # JSON output
+```
+
+Score = path distance between files × edge-kind weight (`calls=1.0`, `references=0.8`, `type_of=0.7`, etc.).
+
+### Snapshots & Diff
+
+Save lightweight graph snapshots and compare them to track structural changes over time — useful before/after refactors, or in CI to audit what a PR added or removed.
+
+```bash
+kirograph snapshot save [label]       # Save current graph state with optional label
+kirograph snapshot save pre-refactor  # Named snapshot
+kirograph snapshot list               # List all saved snapshots
+kirograph snapshot diff               # Diff current graph vs latest snapshot
+kirograph snapshot diff pre-refactor  # Diff current graph vs named snapshot
+kirograph snapshot diff --format full # Show full added/removed symbol lists
+kirograph snapshot diff --format json # JSON output
+```
+
+Snapshots are stored in `.kirograph/snapshots/` as JSON and include all node IDs and edge tuples. The diff is computed as a set operation — O(n) regardless of codebase size.
+
+The `kirograph_diff` MCP tool exposes the same capability to the agent: compare the current graph against the latest (or a named) snapshot without leaving the conversation.
 
 ### Dashboard
 

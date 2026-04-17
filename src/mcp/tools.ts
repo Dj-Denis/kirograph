@@ -241,6 +241,39 @@ export const tools: ToolDefinition[] = [
     },
   },
   {
+    name: 'kirograph_hotspots',
+    description: 'Find the most-connected symbols in the codebase by total edge degree (incoming + outgoing). Useful for identifying load-bearing code, core abstractions, or blast-radius hot zones.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Max results 1-100 (default: 20)', default: 20 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  {
+    name: 'kirograph_surprising',
+    description: 'Find non-obvious cross-file connections: direct edges between symbols in structurally distant parts of the codebase. High-score pairs indicate unexpected coupling worth investigating.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Max results 1-100 (default: 20)', default: 20 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  {
+    name: 'kirograph_diff',
+    description: 'Compare the current graph against a saved snapshot. Shows added/removed symbols and relationships since the snapshot was taken. Use `kirograph snapshot` CLI command to save a snapshot first.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        snapshot: { type: 'string', description: 'Snapshot label to compare against. Omit to use the latest saved snapshot.' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  {
     name: 'kirograph_type_hierarchy',
     description: 'Traverse the type hierarchy of a class or interface (base types and derived types).',
     inputSchema: {
@@ -713,6 +746,65 @@ export class ToolHandler {
           }
         }
 
+        return lines.join('\n');
+      }
+
+      case 'kirograph_hotspots': {
+        const limit = clampLimit(args.limit as number | undefined, 20);
+        const hotspots = cg.findHotspots(limit);
+        if (hotspots.length === 0) return 'No symbols found in index.';
+        const lines = [`Top ${hotspots.length} most-connected symbols (by edge degree):\n`];
+        for (const n of hotspots) {
+          lines.push(`${mapKind(n.kind)} \`${n.name}\` — degree ${n.degree} (in: ${n.inDegree}, out: ${n.outDegree})`);
+          lines.push(`  File: ${n.filePath}:${n.startLine}`);
+        }
+        return lines.join('\n');
+      }
+
+      case 'kirograph_surprising': {
+        const limit = clampLimit(args.limit as number | undefined, 20);
+        const connections = cg.findSurprisingConnections(limit);
+        if (connections.length === 0) return 'No surprising cross-file connections found.';
+        const lines = [`Top ${connections.length} surprising cross-file connections:\n`];
+        for (const c of connections) {
+          lines.push(`${mapKind(c.source.kind)} \`${c.source.name}\` ${c.kind}→ ${mapKind(c.target.kind)} \`${c.target.name}\` (score: ${c.score.toFixed(2)})`);
+          lines.push(`  ${c.source.filePath} → ${c.target.filePath}`);
+        }
+        return lines.join('\n');
+      }
+
+      case 'kirograph_diff': {
+        const sm = cg.createSnapshotManager();
+        const snapshot = args.snapshot
+          ? sm.load(args.snapshot as string)
+          : sm.loadLatest();
+        if (!snapshot) {
+          return args.snapshot
+            ? `Snapshot "${args.snapshot}" not found. Use \`kirograph snapshot list\` to see available snapshots.`
+            : 'No snapshots found. Run `kirograph snapshot` to save one first.';
+        }
+        const diff = sm.diff(snapshot, sm.currentSnapshot());
+        const fromDate = new Date(diff.from.timestamp).toISOString().slice(0, 19).replace('T', ' ');
+        const lines = [
+          `Graph diff: "${diff.from.label}" (${fromDate}) → current`,
+          ``,
+          `Symbols: +${diff.addedNodes.length} added, -${diff.removedNodes.length} removed`,
+          `Edges:   +${diff.addedEdges.length} added, -${diff.removedEdges.length} removed`,
+        ];
+        if (diff.addedNodes.length > 0) {
+          lines.push(`\n## Added symbols (${diff.addedNodes.length})`);
+          for (const n of diff.addedNodes.slice(0, 30)) {
+            lines.push(`+ ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}`);
+          }
+          if (diff.addedNodes.length > 30) lines.push(`  …and ${diff.addedNodes.length - 30} more`);
+        }
+        if (diff.removedNodes.length > 0) {
+          lines.push(`\n## Removed symbols (${diff.removedNodes.length})`);
+          for (const n of diff.removedNodes.slice(0, 30)) {
+            lines.push(`- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}`);
+          }
+          if (diff.removedNodes.length > 30) lines.push(`  …and ${diff.removedNodes.length - 30} more`);
+        }
         return lines.join('\n');
       }
 

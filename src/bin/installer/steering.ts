@@ -34,6 +34,9 @@ Use KiroGraph MCP tools for exploration instead of grep/glob/file reads:
 | \`kirograph_circular_deps\` | Detect circular import dependencies |
 | \`kirograph_files\` | List the indexed file structure |
 | \`kirograph_status\` | Check index health and statistics |
+| \`kirograph_hotspots\` | Find the most-connected symbols (highest edge degree) |
+| \`kirograph_surprising\` | Find non-obvious cross-file connections between distant symbols |
+| \`kirograph_diff\` | Compare current graph vs a saved snapshot |
 
 ### Architecture tools (available when \`enableArchitecture: true\` in config)
 
