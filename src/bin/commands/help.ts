@@ -92,7 +92,10 @@ export function printColoredHelp(): void {
       const pad = ' '.repeat(Math.max(0, nameWidth - signature.length));
       console.log(`${prefix}${namePart}${pad}${c.gray}${cmd.desc}${c.reset}`);
       if (isCaveman) {
-        console.log(`    ${c.dim}Inspired by Caveman — original idea by github.com/JuliusBrussee/caveman${c.reset}`);
+        // desc starts at: emoji prefix (3 display cols: 🪨 + space) + nameWidth
+        const inspiredPad = ' '.repeat(3 + nameWidth);
+        console.log(`${inspiredPad}${c.dim}Inspired by Caveman — original idea by github.com/JuliusBrussee/caveman${c.reset}`);
+        console.log();
       }
       if (cmd.opts) {
         for (const opt of cmd.opts) {
