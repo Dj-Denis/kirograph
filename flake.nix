@@ -10,6 +10,7 @@
         vips,
         qdrant,
       }: let
+        pkg = builtins.fromJSON (builtins.readFile ./package.json);
         qdrant-local = buildNpmPackage {
           pname = "qdrant-local";
           version = "0.0.0-alpha.10";
@@ -33,7 +34,7 @@
       in
         buildNpmPackage {
           pname = "kirograph";
-          version = "0.1.0";
+          version = pkg.version;
           src = ./.;
           npmDeps = importNpmLock {
             npmRoot = ./.;
@@ -48,6 +49,30 @@
 
       devShell = {
         inputsFrom = pkgs: [pkgs.kirograph];
+        packages = pkgs: [
+          pkgs.nodejs_20
+        ];
+      };
+      apps = {
+        update-lockfile = {pkgs, ...}: {
+          type = "app";
+          program = toString (pkgs.writeShellScript "update-lockfile" ''
+            set -euo pipefail
+
+            export PATH=${pkgs.nodejs_20}/bin:$PATH
+
+            echo "Node: $(node -v)"
+            echo "NPM: $(npm -v)"
+
+            # Clean environment for deterministic output
+            rm -rf node_modules
+
+            # Recompute lockfile only
+            npm install --package-lock-only --ignore-scripts
+
+            echo "✅ package-lock.json updated"
+          '');
+        };
       };
     };
 }
