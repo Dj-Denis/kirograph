@@ -106,26 +106,40 @@ jobs:
           else
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
-
       - name: Generate diff summary
         if: steps.upstream.outputs.changed == 'true'
         run: |
-          echo "### 🔄 Upstream commits" > diff.md
-          git log origin/main..upstream/main --oneline >> diff.md
+          echo "### 🔄 Upstream commits (last 20)" > diff.md
+
+          git log origin/main..upstream/main \
+            --pretty=format:"- %s" \
+            -n 20 >> diff.md
 
           echo "" >> diff.md
           echo "### 📦 Lockfile changes" >> diff.md
           git diff -- package-lock.json >> diff.md || true
 
           echo "" >> diff.md
-          echo "### 📊 Build status" >> diff.md
-          if [ "${{ steps.build.outputs.failed }}" = "true" ]; then
-            echo "❌ Nix build failed" >> diff.md
-          else
-            echo "✅ Nix build succeeded" >> diff.md
-          fi
+          echo "### 📊 Summary" >> diff.md
+          git diff --stat >> diff.md
+      - name: Export full upstream diff
+        if: steps.upstream.outputs.changed == 'true'
+        run: |
+          mkdir -p artifacts
 
-      - name: Read diff
+          echo "=== FULL UPSTREAM COMMITS ===" > artifacts/upstream.log
+          git log origin/main..upstream/main --oneline >> artifacts/upstream.log
+
+          echo "" >> artifacts/upstream.log
+          echo "=== FULL DIFF ===" >> artifacts/upstream.log
+          git diff origin/main..upstream/main >> artifacts/upstream.log
+      - name: Upload full diff artifact
+        if: steps.upstream.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-full-diff
+          path: artifacts/upstream.log
+      - name: Read diff into variable
         if: steps.upstream.outputs.changed == 'true'
         id: diffcontent
         run: |
