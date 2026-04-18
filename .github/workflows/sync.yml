@@ -95,11 +95,6 @@ jobs:
             echo "failed=false" >> $GITHUB_OUTPUT
           fi
           exit 0
-      - name: Upload build log
-        uses: actions/upload-artifact@v4
-        with:
-          name: nix-build-log
-          path: /tmp/ci/build.log
       - name: Extract build error summary
         if: steps.build.outputs.failed == 'true'
         run: |
