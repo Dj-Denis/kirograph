@@ -135,11 +135,6 @@ jobs:
           echo "" >> artifacts/full.log
           echo "FULL REPO DIFF (UPSTREAM)" >> artifacts/full.log
           git diff origin/main..upstream/main >> artifacts/full.log || true
-      - name: Upload full diff artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: upstream-full-diff
-          path: artifacts/full.log
       - name: Export full upstream diff
         if: steps.upstream.outputs.changed == 'true'
         run: |
