@@ -12,19 +12,27 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
+
     steps:
+      # -------------------------
+      # 1. Checkout
+      # -------------------------
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Setup git
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
+      # -------------------------
+      # 2. Upstream sync
+      # -------------------------
       - name: Add upstream & fetch
         run: |
-          git remote add upstream https://github.com/davide-desio-eleva/kirograph.git
+          git remote add upstream https://github.com/davide-desio-eleva/kirograph.git || true
           git fetch upstream
 
       - name: Check upstream changes
@@ -40,138 +48,146 @@ jobs:
 
           echo "sha=$UPSTREAM_SHA" >> $GITHUB_OUTPUT
 
-      - name: Apply upstream changes locally
+      - name: Merge upstream
+        if: steps.upstream.outputs.changed == 'true'
         run: |
-          git fetch upstream
           git merge upstream/main --no-edit
-            # ------------------------
-            # ❄️ NIX: update lockfile
-            # ------------------------
 
+      # -------------------------
+      # 3. Nix setup
+      # -------------------------
       - name: Install Nix
         if: steps.upstream.outputs.changed == 'true'
         uses: cachix/install-nix-action@v27
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Enable flakes
         if: steps.upstream.outputs.changed == 'true'
         run: |
           mkdir -p ~/.config/nix
           echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
 
-      - name: Update lockfile
+      # -------------------------
+      # 4. Lockfile update (Nix)
+      # -------------------------
+      - name: Update lockfile via Nix
         if: steps.upstream.outputs.changed == 'true'
         run: nix run .#update-lockfile
 
-      # ------------------------
-      # 🧪 BUILD CHECK (IMPORTANT)
-      # ------------------------
-
+      # -------------------------
+      # 5. Build check (logs in /tmp ONLY)
+      # -------------------------
       - name: Build flake
         if: steps.upstream.outputs.changed == 'true'
         id: build
         run: |
           set +e
-          nix build .#kirograph 2>&1 | tee build.log
+
+          mkdir -p /tmp/ci
+
+          nix build . 2>&1 | tee /tmp/ci/build.log
           STATUS=$?
+
+          echo "exit_code=$STATUS" >> $GITHUB_OUTPUT
 
           if [ $STATUS -ne 0 ]; then
             echo "failed=true" >> $GITHUB_OUTPUT
           else
             echo "failed=false" >> $GITHUB_OUTPUT
           fi
-
           exit 0
-
       - name: Upload build log
-        if: steps.build.outputs.failed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: nix-build-log
-          path: build.log
-
-      # ------------------------
-      # 📦 Diff generation
-      # ------------------------
-
-      - name: Check diff
-        if: steps.upstream.outputs.changed == 'true'
-        id: diff
+          path: /tmp/ci/build.log
+      - name: Extract build error summary
+        if: steps.build.outputs.failed == 'true'
         run: |
-          if git diff --quiet; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-          fi
+          echo "### ❌ Nix Build Error (last 80 lines)" > /tmp/ci/error.md
+
+          tail -n 80 /tmp/ci/build.log >> /tmp/ci/error.md
+
       - name: Generate diff summary
         if: steps.upstream.outputs.changed == 'true'
         run: |
-          echo "### 🔄 Upstream commits (last 20)" > diff.md
+          mkdir -p /tmp/ci
+
+          echo "### 🔄 Upstream commits (last 20)" > /tmp/ci/diff.md
 
           git log origin/main..upstream/main \
-            --pretty=format:"- %s" -n 20 >> diff.md
+            --pretty=format:"- %s" -n 20 >> /tmp/ci/diff.md
 
-          echo "" >> diff.md
-          echo "### 📦 Lockfile changes" >> diff.md
-          echo "- See artifact for full diff" >> diff.md
+          echo "" >> /tmp/ci/diff.md
+          echo "### 📦 Lockfile changes" >> /tmp/ci/diff.md
+          echo "- See artifact (full diff)" >> /tmp/ci/diff.md
 
-          echo "" >> diff.md
-          echo "### 📊 Summary" >> diff.md
-          git diff --stat >> diff.md
-      - name: Export full lockfile diff
+          echo "" >> /tmp/ci/diff.md
+          echo "### 📊 Build status" >> /tmp/ci/diff.md
+
+          if [ "${{ steps.build.outputs.failed }}" = "true" ]; then
+            echo "❌ Build failed" >> /tmp/ci/diff.md
+            echo "" >> /tmp/ci/diff.md
+            cat /tmp/ci/error.md >> /tmp/ci/diff.md
+          else
+            echo "✅ Build passed" >> /tmp/ci/diff.md
+          fi
+
+      - name: Read PR body
+        if: steps.upstream.outputs.changed == 'true'
+        id: prbody
         run: |
-          mkdir -p artifacts
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/ci/diff.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-          echo "FULL UPSTREAM COMMITS" > artifacts/full.log
-          git log origin/main..upstream/main --oneline >> artifacts/full.log
-
-          echo "" >> artifacts/full.log
-          echo "FULL LOCKFILE DIFF" >> artifacts/full.log
-          git diff -- package-lock.json >> artifacts/full.log || true
-
-          echo "" >> artifacts/full.log
-          echo "FULL REPO DIFF (UPSTREAM)" >> artifacts/full.log
-          git diff origin/main..upstream/main >> artifacts/full.log || true
-      - name: Export full upstream diff
+      # -------------------------
+      # 7. Export FULL artifacts (SAFE)
+      # -------------------------
+      - name: Export full diff
         if: steps.upstream.outputs.changed == 'true'
         run: |
-          mkdir -p artifacts
+          mkdir -p /tmp/ci/artifacts
 
-          echo "=== FULL UPSTREAM COMMITS ===" > artifacts/upstream.log
-          git log origin/main..upstream/main --oneline >> artifacts/upstream.log
+          echo "=== UPSTREAM COMMITS ===" > /tmp/ci/artifacts/full.log
+          git log origin/main..upstream/main --oneline >> /tmp/ci/artifacts/full.log
 
-          echo "" >> artifacts/upstream.log
-          echo "=== FULL DIFF ===" >> artifacts/upstream.log
-          git diff origin/main..upstream/main >> artifacts/upstream.log
-      - name: Upload full diff artifact
+          echo "" >> /tmp/ci/artifacts/full.log
+          echo "=== FULL LOCKFILE DIFF ===" >> /tmp/ci/artifacts/full.log
+          git diff -- package-lock.json >> /tmp/ci/artifacts/full.log || true
+
+          echo "" >> /tmp/ci/artifacts/full.log
+          echo "=== FULL REPO DIFF ===" >> /tmp/ci/artifacts/full.log
+          git diff origin/main..upstream/main >> /tmp/ci/artifacts/full.log || true
+
+      - name: Upload full artifact
         if: steps.upstream.outputs.changed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: upstream-full-diff
-          path: artifacts/upstream.log
-      - name: Read diff into variable
+          path: /tmp/ci/artifacts/full.log
+
+      - name: Upload build log
         if: steps.upstream.outputs.changed == 'true'
-        id: diffcontent
-        run: |
-          echo "body<<EOF" >> $GITHUB_OUTPUT
-          cat diff.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+        uses: actions/upload-artifact@v4
+        with:
+          name: nix-build-log
+          path: /tmp/ci/build.log
 
-      # ------------------------
-      # 🔁 PR creation (always)
-      # ------------------------
-
+      # -------------------------
+      # 8. PR creation (ONLY REAL FILES)
+      # -------------------------
       - name: Create Pull Request
         if: steps.upstream.outputs.changed == 'true'
-        id: pr
         uses: peter-evans/create-pull-request@v8
         with:
           branch: sync/upstream
           delete-branch: true
+
           commit-message: |
             chore: sync upstream + update lockfile (nix)
+
           title: "Sync upstream + lockfile update"
+
           body: |
             ## 🔄 Automated Sync (Nix-first)
 
@@ -181,52 +197,10 @@ jobs:
 
             ---
 
-            ### 🔄 Upstream commits (last 20)
-
-            ${{ steps.diffcontent.outputs.body }}
+            ${{ steps.prbody.outputs.body }}
 
             ---
 
-            ### 📦 Lockfile changes
-            See workflow artifact: **upstream-full-diff**
-
-      # ------------------------
-      # 💬 COMMENT IF BUILD FAILED
-      # ------------------------
-
-      - name: Comment build failure
-        if: steps.build.outputs.failed == 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const body = `## ❌ Nix build failed
-
-            The automated build check failed after syncing upstream.
-
-            ### Logs
-            Build logs are attached as workflow artifacts.
-
-            ### SHA
-            ${context.payload.repository?.default_branch || ''}
-
-            Please inspect \`nix build .#kirograph\`.
-            `;
-
-            // Find PR for this branch
-            const prs = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: "open",
-              head: `${context.repo.owner}:sync/upstream`
-            });
-
-            if (prs.data.length > 0) {
-              const pr = prs.data[0];
-
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pr.number,
-                body
-              });
-            }
+            📎 Full logs:
+            - upstream-full-diff (artifact)
+            - nix-build-log (artifact)
