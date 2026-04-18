@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.10.0] - 2026-04-17
+## [0.10.0] - 2026-04-18
 
 ### Added
 
@@ -10,8 +10,21 @@
 - `kirograph hotspots` CLI command — table output with proportional bar chart; `--limit`, `--format json`
 - `kirograph surprising` CLI command — ranked list of unexpected cross-module links; `--limit`, `--format json`
 - `kirograph snapshot save|list|diff` CLI commands — save lightweight graph snapshots to `.kirograph/snapshots/`, list them, and diff current graph vs any snapshot; `--format full|json`
+- `kirograph dead-code` CLI command — groups unexported unreferenced symbols by file; `--limit`, `--format json`; achieves CLI parity with `kirograph_dead_code` MCP tool
+- `kirograph path <from> <to>` CLI command — finds shortest path between two symbols via undirected BFS; shows resolved nodes and hop chain; `--format json`; achieves CLI parity with `kirograph_path` MCP tool
 - `SnapshotManager` in `src/core/snapshot.ts` — save/load/diff logic; diffs computed as O(n) set operations on node ID and edge tuple sets
 - `findHotspots()` and `findSurprisingConnections()` on `GraphDatabase`; `getAllEdges()` for snapshot capture
+
+### Changed
+
+- Help output reorganised into six named groups (🔧 Workspace Setup, 📦 Indexing, 🔍 Search & Exploration, 📊 Graph Insights, 🏛️ Architecture Analysis, ⚙️ Agent & Configuration) with consistent cross-group alignment
+- `kirograph caveman` rendered in brown with 🪨 prefix and attribution line: _Inspired by Caveman — original idea by github.com/JuliusBrussee/caveman_
+- `findPath` BFS changed from directed-only to undirected — now traverses edges in both directions, finding connections across the full graph not just directed call chains
+- `path` command prefers real symbol kinds (function, class, method, etc.) over import/file nodes when resolving search results
+
+### Fixed
+
+- FTS5 query sanitizer now strips commas — long natural-language task descriptions containing commas (e.g. in `kirograph_context`) previously caused `fts5: syntax error near ","` errors
 
 ---
 
