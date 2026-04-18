@@ -1,0 +1,2 @@
+warning: Git tree '/home/runner/work/kirograph/kirograph' is dirty
+error: flake 'git+file:///home/runner/work/kirograph/kirograph' does not provide attribute 'packages.x86_64-linux.kirograph', 'legacyPackages.x86_64-linux.kirograph' or 'kirograph'
