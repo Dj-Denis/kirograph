@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.11.0] - 2026-04-18
+
+### Added
+
+- `kirograph export build [path]` — generates a self-contained interactive HTML graph at `.kirograph/kirograph.html` (or custom path via `-o`); no server required, works offline
+- `kirograph export start [path]` — same as `build` but also opens the result in the default browser
+- Interactive HTML visualization features: color-coded nodes by kind, edge kind labels, directed arrows, force-directed layout (vis.js ForceAtlas2)
+- **Focus mode** (`◎ Focus`) — shows selected node and its direct neighbors only; Escape or double-click background to exit
+- **Path highlight** (`⟶ Path`) — two-click selection runs client-side BFS, highlights shortest path in gold, dims all other nodes/edges, shows hop list in detail panel
+- **Node kind filter** — Legend tab; click any kind to batch-hide/show all nodes of that type
+- **Edge kind filter** — Legend tab; click any edge kind to hide/show all edges of that type
+- **Degree filter slider** — Filters tab; hides nodes below N connections to surface the most-connected symbols
+- **Detail panel** — click a node to see kind, file, line, degree, signature, and copy `file:line` reference
+- **History breadcrumb** — ‹ › navigation through previously inspected nodes (50-entry trail)
+- **Export PNG** — 📷 captures current viewport composited on the dark background
+- **Fullscreen** — ⛶ collapses side panel; graph re-fits automatically
+- **Keyboard shortcuts** — `f` to fit, `Esc` to exit focus/path mode
+- Loader spinner with backdrop blur for all bulk visibility operations (batched via single `DataSet.update()` call)
+- `getAllNodes()` and `getAllEdges()` exposed on the `KiroGraph` facade
+
+### Fixed
+
+- FTS5 query sanitizer now strips commas — task strings with commas (e.g. `kirograph_context`) previously caused `fts5: syntax error near ","`
+- `kirograph path` resolves to real symbol kinds (class, function, method…) before falling back to import/file nodes
+- `findPath` BFS is now undirected — traverses edges in both directions
+
+---
+
 ## [0.10.0] - 2026-04-18
 
 ### Added

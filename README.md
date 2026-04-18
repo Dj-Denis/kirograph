@@ -648,6 +648,57 @@ Snapshots are stored in `.kirograph/snapshots/` as JSON and include all node IDs
 
 The `kirograph_diff` MCP tool exposes the same capability to the agent: compare the current graph against the latest (or a named) snapshot without leaving the conversation.
 
+### Dead Code
+
+Find unexported symbols with zero incoming references — candidates for removal.
+
+```bash
+kirograph dead-code [path]            # List dead code grouped by file
+kirograph dead-code --limit 20        # Limit results
+kirograph dead-code --format json     # JSON output
+```
+
+Only unexported symbols are considered, since exported symbols may be used by consumers outside the indexed project.
+
+### Path
+
+Find the shortest connection between any two symbols, traversing all edge types in both directions.
+
+```bash
+kirograph path <from> <to>            # Find path between two symbols
+kirograph path LoginController Pool   # Example: how are these connected?
+kirograph path --format json          # JSON output
+```
+
+The command resolves symbol names using the same fuzzy search as `kirograph query`, preferring real symbol kinds (class, function, method…) over import/file nodes. The result shows each hop with file and line.
+
+### Graph Export
+
+Export the full graph as a self-contained interactive HTML file — no server required, works offline.
+
+```bash
+kirograph export build [path]                  # Generate .kirograph/kirograph.html
+kirograph export start [path]                  # Generate and open in browser
+kirograph export build -o /tmp/graph.html      # Custom output path
+kirograph export build --include-contains      # Include structural contains edges (noisy)
+```
+
+The exported file is stored at `.kirograph/kirograph.html` by default and opens directly in any browser. It includes:
+
+- **Color-coded nodes** by kind (class, function, method, component…) with size proportional to degree
+- **Directed edges** with kind labels; dashed for imports/references
+- **Search** — live filter by name, qualified name, or file path
+- **Focus mode** (`◎ Focus`) — select a node and see only it and its direct neighbors
+- **Path highlight** (`⟶ Path`) — click two nodes to find and highlight the shortest path between them; shown as a hop list in the detail panel
+- **Node kind filter** — Legend tab, click any kind to hide/show all nodes of that type
+- **Edge kind filter** — Legend tab, click any edge kind to hide/show all edges of that type
+- **Degree filter** — Filters tab, slider to hide nodes below N connections (useful for surfacing the most-connected symbols in large graphs)
+- **Detail panel** — click a node to see kind, file, line, degree, signature, and copy the file reference
+- **History breadcrumb** — ‹ › navigation through previously inspected nodes
+- **Export PNG** — 📷 button captures the current viewport with the dark background
+- **Fullscreen** — ⛶ collapses the side panel for maximum graph space
+- **Keyboard shortcuts** — `f` to fit, `Esc` to exit focus/path mode
+
 ### Dashboard
 
 When `semanticEngine` is set to `qdrant` or `typesense`, use these commands to manage the background server and its dashboard UI.
