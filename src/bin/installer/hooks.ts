@@ -120,5 +120,6 @@ export function writeHooks(kiroDir: string): void {
   for (const { filename, hook } of HOOKS) {
     writeJson(path.join(hooksDir, filename), hook);
   }
+
   console.log(`  ✓ Auto-sync hooks written to ${hooksDir}`);
 }
