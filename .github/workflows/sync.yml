@@ -112,16 +112,34 @@ jobs:
           echo "### 🔄 Upstream commits (last 20)" > diff.md
 
           git log origin/main..upstream/main \
-            --pretty=format:"- %s" \
-            -n 20 >> diff.md
+            --pretty=format:"- %s" -n 20 >> diff.md
 
           echo "" >> diff.md
           echo "### 📦 Lockfile changes" >> diff.md
-          git diff -- package-lock.json >> diff.md || true
+          echo "- See artifact for full diff" >> diff.md
 
           echo "" >> diff.md
           echo "### 📊 Summary" >> diff.md
           git diff --stat >> diff.md
+      - name: Export full lockfile diff
+        run: |
+          mkdir -p artifacts
+
+          echo "FULL UPSTREAM COMMITS" > artifacts/full.log
+          git log origin/main..upstream/main --oneline >> artifacts/full.log
+
+          echo "" >> artifacts/full.log
+          echo "FULL LOCKFILE DIFF" >> artifacts/full.log
+          git diff -- package-lock.json >> artifacts/full.log || true
+
+          echo "" >> artifacts/full.log
+          echo "FULL REPO DIFF (UPSTREAM)" >> artifacts/full.log
+          git diff origin/main..upstream/main >> artifacts/full.log || true
+      - name: Upload full diff artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-full-diff
+          path: artifacts/full.log
       - name: Export full upstream diff
         if: steps.upstream.outputs.changed == 'true'
         run: |
@@ -170,7 +188,14 @@ jobs:
 
             ---
 
+            ### 🔄 Upstream commits (last 20)
+
             ${{ steps.diffcontent.outputs.body }}
+
+            ---
+
+            ### 📦 Lockfile changes
+            See workflow artifact: **upstream-full-diff**
 
       # ------------------------
       # 💬 COMMENT IF BUILD FAILED
