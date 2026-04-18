@@ -40,15 +40,13 @@ jobs:
 
           echo "sha=$UPSTREAM_SHA" >> $GITHUB_OUTPUT
 
-      - name: Create sync branch
-        if: steps.upstream.outputs.changed == 'true'
+      - name: Apply upstream changes locally
         run: |
-          git checkout -B sync/upstream origin/main
+          git fetch upstream
           git merge upstream/main --no-edit
-
-      # ------------------------
-      # ❄️ NIX: update lockfile
-      # ------------------------
+            # ------------------------
+            # ❄️ NIX: update lockfile
+            # ------------------------
 
       - name: Install Nix
         if: steps.upstream.outputs.changed == 'true'
