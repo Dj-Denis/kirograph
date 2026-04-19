@@ -31,6 +31,9 @@ const KIROGRAPH_TOOLS = [
   '@kirograph/kirograph_architecture',
   '@kirograph/kirograph_package',
   '@kirograph/kirograph_coupling',
+  '@kirograph/kirograph_hotspots',
+  '@kirograph/kirograph_surprising',
+  '@kirograph/kirograph_diff',
 ];
 
 const SYNC_CMD = 'kirograph sync-if-dirty --quiet 2>/dev/null || true';

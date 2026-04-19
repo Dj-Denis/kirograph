@@ -19,8 +19,12 @@ import { ArchitectureAnalyzer } from './architecture/index';
 import { LockManager } from './core/lock-manager';
 import { IndexPipeline } from './core/pipeline';
 import { buildFileTree } from './core/file-tree';
+import { SnapshotManager } from './core/snapshot';
 import { Searcher } from './search/searcher';
 import type { FileTreeNode, FileTree } from './core/file-tree';
+import type { GraphSnapshot, GraphDiff } from './core/snapshot';
+
+export type { GraphSnapshot, GraphDiff };
 import type {
   Node, NodeKind, IndexResult, IndexProgress, SyncResult, TaskContext,
   SearchResult, SearchOptions, NodeContext, NodeMetrics,
@@ -166,6 +170,22 @@ export default class KiroGraph {
 
   getAffectedTests(changedFiles: string[], opts?: { depth?: number; testPattern?: string }): string[] {
     return this.queryManager.getAffectedTests(changedFiles, opts);
+  }
+
+  // ── Graph insights ─────────────────────────────────────────────────────────
+
+  findHotspots(limit = 20): Array<Node & { degree: number; inDegree: number; outDegree: number }> {
+    return this.db.findHotspots(limit);
+  }
+
+  findSurprisingConnections(limit = 20): Array<{ source: Node; target: Node; kind: string; score: number }> {
+    return this.db.findSurprisingConnections(limit);
+  }
+
+  // ── Snapshots ──────────────────────────────────────────────────────────────
+
+  createSnapshotManager(): SnapshotManager {
+    return new SnapshotManager(this.db, this.projectRoot);
   }
 
   // ── Stats ──────────────────────────────────────────────────────────────────

@@ -164,7 +164,7 @@ export class GraphDatabase {
     // parser before SQLite substitutes them, causing "syntax error near ?".
     const safe = query
       .replace(/\b(AND|OR|NOT)\b/g, ' ')       // FTS5 boolean operators
-      .replace(/['"*()?\-+^~:{}\\\.\/]/g, ' ')  // FTS5 special chars (incl. /)
+      .replace(/['"*()?\-+^~:{}\\\.\/,]/g, ' ')  // FTS5 special chars (incl. / and ,)
       .replace(/\s+/g, ' ')
       .trim();
     if (!safe) return [];
@@ -688,6 +688,96 @@ export class GraphDatabase {
 
   getAllNodes(): import('../types').Node[] {
     return this.db.all('SELECT * FROM nodes').map(this.rowToNode);
+  }
+
+  getAllEdges(): Edge[] {
+    return this.db.all('SELECT source, target, kind FROM edges').map((row: any) => ({
+      source: row.source,
+      target: row.target,
+      kind: row.kind,
+    }));
+  }
+
+  /**
+   * Find the top-N most-connected nodes by total edge degree (in + out).
+   * Excludes 'contains' edges (structural nesting, not semantic connections).
+   */
+  findHotspots(limit = 20): Array<Node & { degree: number; inDegree: number; outDegree: number }> {
+    const rows = this.db.all(
+      `SELECT n.*,
+         (SELECT COUNT(*) FROM edges WHERE target = n.id AND kind != 'contains') AS in_degree,
+         (SELECT COUNT(*) FROM edges WHERE source = n.id AND kind != 'contains') AS out_degree,
+         (SELECT COUNT(*) FROM edges WHERE (source = n.id OR target = n.id) AND kind != 'contains') AS degree
+       FROM nodes n
+       ORDER BY degree DESC
+       LIMIT ?`,
+      [limit]
+    );
+    return rows.map((row: any) => ({
+      ...this.rowToNode(row),
+      degree: row.degree as number,
+      inDegree: row.in_degree as number,
+      outDegree: row.out_degree as number,
+    }));
+  }
+
+  /**
+   * Find surprising cross-file connections: direct edges between nodes in
+   * structurally distant files. Scored by path distance × edge-kind weight.
+   */
+  findSurprisingConnections(limit = 20): Array<{ source: Node; target: Node; kind: string; score: number }> {
+    const KIND_WEIGHT: Record<string, number> = {
+      calls: 1.0, references: 0.8, type_of: 0.7, returns: 0.6,
+      decorates: 0.6, extends: 0.5, implements: 0.5,
+    };
+
+    const rows: Array<{ source: string; target: string; kind: string; source_file: string; target_file: string }> =
+      this.db.all(
+        `SELECT e.source, e.target, e.kind,
+                ns.file_path AS source_file, nt.file_path AS target_file
+         FROM edges e
+         JOIN nodes ns ON ns.id = e.source
+         JOIN nodes nt ON nt.id = e.target
+         WHERE ns.file_path != nt.file_path
+           AND e.kind NOT IN ('contains', 'import', 'imports')
+         LIMIT 5000`
+      );
+
+    // Score: path distance × kind weight
+    const scored = rows.map(row => {
+      const srcDirs = row.source_file.split('/').slice(0, -1);
+      const tgtDirs = row.target_file.split('/').slice(0, -1);
+      let common = 0;
+      for (let i = 0; i < Math.min(srcDirs.length, tgtDirs.length); i++) {
+        if (srcDirs[i] === tgtDirs[i]) common++;
+        else break;
+      }
+      const maxDirs = Math.max(srcDirs.length, tgtDirs.length, 1);
+      const pathSimilarity = common / maxDirs;
+      const kindWeight = KIND_WEIGHT[row.kind] ?? 0.4;
+      return { ...row, score: (1 - pathSimilarity) * kindWeight };
+    });
+
+    // Sort desc, deduplicate by source+target+kind
+    scored.sort((a, b) => b.score - a.score);
+    const seen = new Set<string>();
+    const top: typeof scored = [];
+    for (const row of scored) {
+      const key = `${row.source}|${row.target}|${row.kind}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        top.push(row);
+        if (top.length >= limit) break;
+      }
+    }
+
+    const result: Array<{ source: Node; target: Node; kind: string; score: number }> = [];
+    for (const row of top) {
+      const src = this.getNode(row.source);
+      const tgt = this.getNode(row.target);
+      if (src && tgt) result.push({ source: src, target: tgt, kind: row.kind, score: row.score });
+    }
+    return result;
   }
 
   getStats(): GraphStats {
