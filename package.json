@@ -31,6 +31,8 @@
     "@huggingface/transformers": "^3.0.0",
     "commander": "^14.0.2",
     "figlet": "^1.11.0",
+    "node-addon-api": "^8.7.0",
+    "node-gyp": "^11.5.0",
     "node-sqlite3-wasm": "^0.8.30",
     "picomatch": "^4.0.3",
     "tree-sitter-wasms": "^0.1.11",

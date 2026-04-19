@@ -9,9 +9,13 @@
         pkg-config,
         vips,
         qdrant,
+        nodejs_22,
+        typescript,
       }: let
         pkg = builtins.fromJSON (builtins.readFile ./package.json);
+        nodejs = nodejs_22;
         qdrant-local = buildNpmPackage {
+          inherit (nodejs);
           pname = "qdrant-local";
           version = "0.0.0-alpha.10";
 
@@ -33,6 +37,7 @@
         };
       in
         buildNpmPackage {
+          inherit (nodejs);
           pname = "kirograph";
           version = pkg.version;
           src = ./.;
@@ -45,6 +50,8 @@
           npmConfigHook = importNpmLock.npmConfigHook;
           buildInputs = [vips];
           nativeBuildInputs = [pkg-config];
+          makeCacheWritable = true;
+          npmRebuildFlags = [ "--ignore-scripts" ];
         };
 
       devShell = {
