@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.12.0] - 2026-04-20
+
+`kirograph export` is now a full interactive graph dashboard.
+
+- **Search** — live symbol search; matching nodes are highlighted, non-matching ones dim; viewport fits to results
+- **Two-click path** — click any two nodes to instantly find and highlight the shortest path between them, with detail cards for both endpoints
+- **Zoom to node** — clicking a node zooms in so its label is always readable
+- **Cluster view** — group nodes by directory; click the cluster to expand it back to the full graph
+- **Minimap** — always-visible overview of the full graph; click to pan
+- **Right-click menu** — focus neighbors, start a path, copy ID or file path, highlight all nodes of the same kind
+- **Heat map** — color nodes by how recently their file was modified, to spot the most active areas of the codebase
+- **Analytics charts** — bar chart of the most connected symbols, donut chart of node distribution by kind, degree distribution curve
+
+---
+
 ## [0.11.0] - 2026-04-18
 
 ### Added

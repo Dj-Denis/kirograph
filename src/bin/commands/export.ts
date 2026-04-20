@@ -230,7 +230,6 @@ function buildFiles(
 
 <div id="init-loader">
   ${loaderLogoTag}
-  <canvas id="fake-graph" width="520" height="220"></canvas>
   <div class="init-title">${visNodes.length} nodes · ${visEdges.length} edges · ${escHtml(projectName)}</div>
   <div id="init-progress-wrap"><div id="init-progress-bar"></div></div>
   <div id="init-status">Loading…</div>
@@ -497,7 +496,6 @@ body {
 #init-loader.fade-out { opacity: 0; pointer-events: none; }
 #init-loader img { max-height: 180px; max-width: 320px; width: auto; height: auto; opacity: .95; }
 #init-loader .init-title { color: #546e7a; font-size: 12px; letter-spacing: .05em; }
-#fake-graph { border-radius: 12px; opacity: .9; }
 #init-progress-wrap {
   width: 220px;
   background: #1a1a2e;
@@ -815,90 +813,7 @@ function buildJs(
   visNodes: any[], visEdges: any[],
   kindColors: Record<string, string>, edgeColors: Record<string, string>,
 ): string {
-  return `// ── Fake graph loader animation (sine-drift, no heavy physics) ────────────────
-(function() {
-  var canvas = document.getElementById('fake-graph');
-  if (!canvas) return;
-  var ctx = canvas.getContext('2d');
-  var W = canvas.width, H = canvas.height;
-
-  var COLORS = ['#9b59b6','#5b6abf','#7986cb','#26a69a','#e67e22','#00838f','#ab47bc','#6c3483','#546e7a','#c792ea'];
-  var N = 22;
-  var nodes = [];
-  var edges = [];
-
-  // Place nodes in a soft circular layout with jitter
-  for (var i = 0; i < N; i++) {
-    var angle = (i / N) * 2 * Math.PI + Math.random() * 0.4;
-    var ring   = 0.28 + Math.random() * 0.22;
-    nodes.push({
-      bx: W / 2 + Math.cos(angle) * W * ring,   // base position
-      by: H / 2 + Math.sin(angle) * H * ring,
-      ax: 12 + Math.random() * 18,               // drift amplitude x
-      ay: 10 + Math.random() * 16,               // drift amplitude y
-      fx: 0.18 + Math.random() * 0.22,           // drift frequency x
-      fy: 0.14 + Math.random() * 0.20,           // drift frequency y
-      px: Math.random() * 2 * Math.PI,           // phase x
-      py: Math.random() * 2 * Math.PI,           // phase y
-      r:  3.5 + Math.random() * 5,
-      color: COLORS[i % COLORS.length],
-    });
-  }
-
-  // Sparse random edges
-  var edgeSet = new Set();
-  for (var i = 0; i < Math.round(N * 1.5); i++) {
-    var a = Math.floor(Math.random() * N);
-    var b = Math.floor(Math.random() * N);
-    var key = Math.min(a,b) + ',' + Math.max(a,b);
-    if (a !== b && !edgeSet.has(key)) { edgeSet.add(key); edges.push([a, b]); }
-  }
-
-  var t = 0, raf;
-
-  function tick() {
-    t += 0.012;
-    ctx.clearRect(0, 0, W, H);
-
-    // Update positions via pure sine drift — O(N), no loops over pairs
-    nodes.forEach(function(n) {
-      n.x = n.bx + Math.sin(t * n.fx + n.px) * n.ax;
-      n.y = n.by + Math.cos(t * n.fy + n.py) * n.ay;
-    });
-
-    // Draw edges
-    ctx.lineWidth = 1;
-    edges.forEach(function(e) {
-      var na = nodes[e[0]], nb = nodes[e[1]];
-      var grad = ctx.createLinearGradient(na.x, na.y, nb.x, nb.y);
-      grad.addColorStop(0, na.color + '44');
-      grad.addColorStop(1, nb.color + '44');
-      ctx.beginPath();
-      ctx.moveTo(na.x, na.y);
-      ctx.lineTo(nb.x, nb.y);
-      ctx.strokeStyle = grad;
-      ctx.stroke();
-    });
-
-    // Draw nodes with glow
-    ctx.shadowBlur = 12;
-    nodes.forEach(function(n) {
-      ctx.shadowColor = n.color;
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, n.r, 0, 2 * Math.PI);
-      ctx.fillStyle = n.color;
-      ctx.fill();
-    });
-    ctx.shadowBlur = 0;
-
-    raf = requestAnimationFrame(tick);
-  }
-
-  tick();
-  window._stopFakeGraph = function() { cancelAnimationFrame(raf); };
-})();
-
-// ── Data ─────────────────────────────────────────────────────────────────────
+  return `// ── Data ─────────────────────────────────────────────────────────────────────
 const NODES_DATA  = ${JSON.stringify(visNodes)};
 const EDGES_DATA  = ${JSON.stringify(visEdges)};
 const KIND_COLORS = ${JSON.stringify(kindColors)};
@@ -990,7 +905,6 @@ network.on('stabilizationIterationsDone', () => {
   network.setOptions({ physics: { enabled: false, stabilization: { enabled: false } } });
   physicsOn = false;
   document.getElementById('btn-physics').classList.remove('active');
-  if (window._stopFakeGraph) window._stopFakeGraph();
   initLoader.classList.add('fade-out');
   setTimeout(() => initLoader.remove(), 420);
 });
