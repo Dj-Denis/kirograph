@@ -114,7 +114,7 @@ kirograph uninit --force    # Skip confirmation prompt
 ```
 
 This removes:
-- `.kirograph/` — index database, snapshots, and exported HTML
+- `.kirograph/` — index database, snapshots, and export directory
 - `.kiro/hooks/kirograph-*.json` — all KiroGraph hooks
 - `.kiro/steering/kirograph.md` — the steering file
 - `.kiro/agents/kirograph.json` — the CLI agent config
@@ -677,6 +677,97 @@ kirograph snapshot diff --format json # JSON output
 Snapshots are stored in `.kirograph/snapshots/` as JSON and include all node IDs and edge tuples. The diff is computed as a set operation — O(n) regardless of codebase size.
 
 The `kirograph_diff` MCP tool exposes the same capability to the agent: compare the current graph against the latest (or a named) snapshot without leaving the conversation.
+
+### Dead Code
+
+Find unexported symbols with zero incoming references — candidates for removal.
+
+```bash
+kirograph dead-code [path]            # List dead code grouped by file
+kirograph dead-code --limit 20        # Limit results
+kirograph dead-code --format json     # JSON output
+```
+
+Only unexported symbols are considered, since exported symbols may be used by consumers outside the indexed project.
+
+### Path
+
+Find the shortest connection between any two symbols, traversing all edge types in both directions.
+
+```bash
+kirograph path <from> <to>            # Find path between two symbols
+kirograph path LoginController Pool   # Example: how are these connected?
+kirograph path --format json          # JSON output
+```
+
+The command resolves symbol names using the same fuzzy search as `kirograph query`, preferring real symbol kinds (class, function, method…) over import/file nodes. The result shows each hop with file and line.
+
+### Graph Export
+
+Export the full graph as an interactive dashboard — three files served from a local directory, no server required, works offline.
+
+```bash
+kirograph export build [path]             # Generate .kirograph/export/{index.html,app.css,app.js}
+kirograph export start [path]             # Generate and open in browser
+kirograph export build -o /tmp/myexport  # Custom output directory
+kirograph export build --include-contains # Include structural contains edges (adds noise, off by default)
+```
+
+Output lands in `.kirograph/export/` by default. Open `index.html` in any browser.
+
+![KiroGraph export](assets/export.gif)
+
+#### Graph & navigation
+
+- **Color-coded nodes** by kind (class, function, method, component…) with size proportional to degree
+- **Directed edges** with kind labels; dashed lines for imports and references
+- **Click a node** to zoom in and inspect it — kind, file, line, degree, signature, and a copy button for the file reference
+- **Click two nodes** to instantly find and highlight the shortest path between them, with detail cards for both endpoints
+- **History** — ‹ › navigation through previously inspected nodes
+- **Keyboard shortcuts** — `f` to fit the graph, `Esc` to exit focus or path mode
+
+#### Controls
+
+| Button | What it does |
+|--------|-------------|
+| **⊞ Fit** | Fit the entire graph to the viewport |
+| **⚡ Physics** | Toggle the force-directed layout |
+| **⛶ Fullscreen** | Collapse the side panel for maximum graph space |
+| **📷 PNG** | Save the current view as an image |
+| **◎ Focus** | Show only the selected node and its direct neighbors |
+| **⟶ Path** | Find the shortest path between two nodes |
+| **⬡ Cluster** | Group nodes by directory; click a cluster to expand it |
+| **🌡 Heat** | Color nodes by how recently their file was modified |
+| **📊 Charts** | Open the analytics panel |
+
+#### Search
+
+Type to search by name, qualified name, or file path. Matching nodes are highlighted and the viewport fits to them.
+
+#### Legend & filters
+
+- **Node kind filter** — Legend tab; click any kind to hide or show all nodes of that type
+- **Edge kind filter** — Legend tab; click any edge kind to hide or show edges of that type
+- **Degree slider** — Filters tab; hide nodes below N connections to surface the most-connected symbols
+
+#### Minimap
+
+An overview of the full graph is always visible in the bottom-left corner. Click anywhere on it to pan the main graph.
+
+#### Right-click menu
+
+Right-click any node to focus its neighbors, start a path from it, copy its ID or file path, or highlight all nodes of the same kind.
+
+#### Analytics charts
+
+The 📊 Charts button opens a panel with three charts:
+
+| Chart | What it shows |
+|-------|--------------|
+| **Bar** | The 15 most-connected symbols |
+| **Donut** | How node kinds are distributed across the codebase |
+| **Line** | How many symbols have each connection count — reveals the overall connectivity shape of the graph |
+
 
 ### Dashboard
 
