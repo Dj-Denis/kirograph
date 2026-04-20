@@ -2,8 +2,9 @@
 
 ## [0.12.0] - 2026-04-20
 
-`kirograph export` is now a full interactive graph dashboard.
+### Added
 
+- `kirograph export` is now available to render a full interactive graph dashboard.
 - **Search** — live symbol search; matching nodes are highlighted, non-matching ones dim; viewport fits to results
 - **Two-click path** — click any two nodes to instantly find and highlight the shortest path between them, with detail cards for both endpoints
 - **Zoom to node** — clicking a node zooms in so its label is always readable
