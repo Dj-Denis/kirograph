@@ -254,9 +254,15 @@ function buildFiles(
     <input id="search" type="text" placeholder="🔍  Search symbols…">
 
     <div class="float-group vertical">
-      <button class="fbtn active" id="btn-fit"        title="Fit graph to view">⊞ <span class="fbtn-label">Fit</span></button>
+      <button class="fbtn"        id="btn-fit"        title="Fit graph to view">⊞ <span class="fbtn-label">Fit</span></button>
       <button class="fbtn active" id="btn-physics"    title="Toggle physics">⚡ <span class="fbtn-label">Physics</span></button>
-      <button class="fbtn"        id="btn-fullscreen" title="Toggle fullscreen">⛶ <span class="fbtn-label">Fullscreen</span></button>
+
+      <div class="fslider-row" id="physics-speed-row">
+        <span class="fslider-label">Slow</span>
+        <input type="range" id="physics-speed" min="1" max="10" value="5" step="1" title="Physics speed">
+        <span class="fslider-label">Fast</span>
+      </div>
+
       <button class="fbtn"        id="btn-png"        title="Export PNG">📷 <span class="fbtn-label">PNG</span></button>
     </div>
 
@@ -266,6 +272,19 @@ function buildFiles(
       <button class="fbtn" id="btn-cluster" title="Cluster by directory">⬡ <span class="fbtn-label">Cluster</span></button>
       <button class="fbtn" id="btn-heat"    title="Heat map by file recency">🌡 <span class="fbtn-label">Heat</span></button>
       <button class="fbtn" id="btn-charts"  title="Analytics charts">📊 <span class="fbtn-label">Charts</span></button>
+    </div>
+
+    <div id="heat-legend">
+      <div class="heat-legend-title">🌡 File recency</div>
+      <div id="heat-gradient"></div>
+      <div class="heat-stops">
+        <div class="heat-stop" data-tip="Modified in the last 24 hours"><span class="heat-stop-dot" style="background:#e74c3c"></span>Today</div>
+        <div class="heat-stop" data-tip="Modified in the last week"><span class="heat-stop-dot" style="background:#e67e22"></span>This week</div>
+        <div class="heat-stop" data-tip="Modified in the last month"><span class="heat-stop-dot" style="background:#f1c40f"></span>This month</div>
+        <div class="heat-stop" data-tip="Modified in the last 6 months"><span class="heat-stop-dot" style="background:#27ae60"></span>6 months</div>
+        <div class="heat-stop" data-tip="Modified more than 6 months ago"><span class="heat-stop-dot" style="background:#2980b9"></span>Older</div>
+      </div>
+      <div id="heat-tip"></div>
     </div>
   </div>
   </div><!-- /float-sidebar -->
@@ -281,27 +300,85 @@ function buildFiles(
         <button id="charts-close">✕</button>
       </div>
       <div id="charts-body">
-        <div class="chart-block">
+        <div class="chart-block span-3">
           <div class="chart-title">Top 15 Most Connected Symbols</div>
-          <div class="chart-sub">Bar length = total connections (in + out)</div>
-          <canvas id="chart-bar" width="540" height="280"></canvas>
+
+          <div class="chart-insight">Symbols with the highest combined in + out degree are the load-bearing pillars of your codebase.<br>A very long bar on an internal helper is a red flag — it means many things depend on one place that wasn't designed as an API.</div>
+          <canvas id="chart-bar" width="1080" height="280"></canvas>
         </div>
-        <div class="chart-block">
+        <div class="chart-block span-1">
           <div class="chart-title">Node Distribution by Kind</div>
-          <div class="chart-sub">Donut slice = share of each symbol type in the codebase</div>
+          <div class="chart-insight">Shows what your codebase is made of at a glance — heavy on functions vs. classes vs. types.<br>A dominant slice (e.g. 80% variables) can indicate over-abstraction or, conversely, too little structure.</div>
           <canvas id="chart-pie" width="540" height="280"></canvas>
         </div>
-        <div class="chart-block">
+        <div class="chart-block span-2">
           <div class="chart-title">Degree Distribution — Connectivity Curve</div>
-          <div class="chart-sub">X = connection count, Y = number of symbols with that many connections</div>
-          <canvas id="chart-line" width="540" height="200"></canvas>
+          <div class="chart-insight">Healthy codebases show a steep left peak (most symbols have few connections) and a long tail.<br>A flat or multi-modal curve signals coupling problems — too many symbols are over-connected.</div>
+          <canvas id="chart-line" width="720" height="280"></canvas>
         </div>
+
+        <div class="chart-block span-3">
+          <div class="chart-title">Top 15 Callers — Highest Out-Degree</div>
+          <div class="chart-insight">High out-degree means this symbol knows too much about the rest of the system — a classic god-object signal.<br>If the top callers are entry points or orchestrators that's fine; if they're utility helpers, consider splitting them.</div>
+          <canvas id="chart-callers" width="1080" height="280"></canvas>
+        </div>
+
+        <div class="chart-block span-3">
+          <div class="chart-title">Top 15 Callees — Highest In-Degree</div>
+          <div class="chart-insight">These are your real public API — change them and many things break. High in-degree is expected for core utilities.<br>Surprise entries here (a private helper, a constant) indicate hidden coupling you should make explicit.</div>
+          <canvas id="chart-callees" width="1080" height="280"></canvas>
+        </div>
+
+        <div class="chart-block span-3">
+          <div class="chart-title">Files by Symbol Count</div>
+          <div class="chart-insight">Files with many symbols are candidates for splitting — they likely handle multiple responsibilities.<br>Cross-reference with the coupling matrix: a large file that also couples to many directories is a high-priority refactor target.</div>
+          <canvas id="chart-files" width="1080" height="280"></canvas>
+        </div>
+
+        <div class="chart-block span-1">
+          <div class="chart-title">Edge Kind Distribution</div>
+          <div class="chart-insight">Tells you which relationship patterns dominate: calls, imports, inheritance, containment.<br>An unusually high import ratio vs. calls can mean modules are tightly wired at the file level without using each other's symbols.</div>
+          <canvas id="chart-edgekinds" width="400" height="280"></canvas>
+        </div>
+
+        <div class="chart-block span-1">
+          <div class="chart-title">Dead Code by Kind</div>
+          <div class="chart-insight">These symbols are never referenced from within the indexed codebase — strong deletion candidates.<br>Focus on functions and classes; variables and constants are more likely to be used via dynamic patterns not captured by static analysis.</div>
+          <canvas id="chart-deadcode" width="400" height="280"></canvas>
+        </div>
+
+        <div class="chart-block span-1">
+          <div class="chart-title">Symbol Count per Directory</div>
+          <div class="chart-insight">A single directory holding most symbols is a monolith smell — the rest of the structure may be cosmetic.<br>Balanced distribution suggests good separation of concerns; a very tall single bar suggests your folder structure doesn't reflect your actual architecture.</div>
+          <canvas id="chart-dirs" width="400" height="280"></canvas>
+        </div>
+
+        <div class="chart-block span-3">
+          <div class="chart-title">Exported vs Unexported by Kind</div>
+          <div class="chart-insight">Shows how much of each symbol type is intentionally public. A large unexported slice is healthy — it means most logic is encapsulated.<br>If nearly everything is exported, your module boundaries are weak and consumers have too much surface area to depend on.</div>
+          <canvas id="chart-exported" width="1080" height="260"></canvas>
+        </div>
+
+        <div class="chart-block span-3">
+          <div class="chart-title">Directory Coupling Matrix</div>
+          <div class="chart-insight">Each row is a source directory, each column is a target — a bright cell means many edges cross from that row's folder into that column's folder.<br>Symmetrically bright off-diagonal pairs (A↔B and B↔A) reveal circular coupling between modules that should be cleanly layered.</div>
+          <canvas id="chart-coupling" width="1080" height="420"></canvas>
+        </div>
+
+        <div class="chart-block span-2">
+          <div class="chart-title">In-Degree vs Out-Degree Scatter</div>
+          <div class="chart-insight">Top-left = Sinks (referenced a lot, calls nothing) — typical for pure data types or leaf utilities.<br>Bottom-right = Sources (calls a lot, rarely referenced) — often entry points or wiring code. Top-right = Hubs — investigate these first.</div>
+          <canvas id="chart-scatter" width="720" height="320"></canvas>
+        </div>
+
+        <div class="chart-block span-1">
+          <div class="chart-title">Average Degree per File</div>
+          <div class="chart-insight">Files with high average degree are deeply entangled regardless of their size — even a 2-symbol file can score high.<br>This metric catches hidden complexity better than raw symbol count: a small file with a huge average is often the real coupling hotspot.</div>
+          <canvas id="chart-avgdeg" width="400" height="320"></canvas>
+        </div>
+
       </div>
     </div>
-  </div>
-  <div id="heat-legend">
-    <div id="heat-gradient"></div>
-    <div class="heat-labels"><span>Newer</span><span>Older</span></div>
   </div>
 
   <div id="panel">
@@ -471,6 +548,41 @@ body {
 .fbtn:hover  { background: #16162a; color: #ffffff; }
 .fbtn.active { background: #1e1e40; color: #c792ea; border-left: 3px solid #c792ea; padding-left: 11px; }
 .fbtn.warn   { color: #e67e22; }
+.fslider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-bottom: 1px solid #252538;
+}
+.fslider-label { font-size: 9px; color: #7a86aa; flex-shrink: 0; letter-spacing: .03em; }
+#physics-speed {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  background: #2e2e52;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+#physics-speed::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #7986cb;
+  cursor: pointer;
+  border: 2px solid #c792ea;
+}
+#physics-speed::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #7986cb;
+  cursor: pointer;
+  border: 2px solid #c792ea;
+}
 .fbtn-label {
   font-size: 11px;
   font-weight: 500;
@@ -562,8 +674,6 @@ body {
   flex-shrink: 0;
   transition: width .2s;
 }
-body.fullscreen #panel { width: 0; border: none; }
-body.fullscreen #float-sidebar { display: none; }
 
 #panel-tabs { display: flex; border-bottom: 1px solid #1e1e2e; flex-shrink: 0; }
 .tab {
@@ -723,7 +833,7 @@ input[type=range] {
   background: #0e0e1c;
   border: 1px solid #3a3a5e;
   border-radius: 14px;
-  width: min(660px, 96vw);
+  width: 80vw;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
@@ -758,26 +868,39 @@ input[type=range] {
 #charts-body {
   overflow-y: auto;
   padding: 18px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 18px;
 }
+.chart-block.span-1 { grid-column: span 1; }
+.chart-block.span-2 { grid-column: span 2; }
+.chart-block.span-3 { grid-column: 1 / -1; }
 .chart-block {
-  background: #080814;
-  border: 1px solid #252540;
+  background: #0a0a1c;
+  border: 1px solid #2e2e52;
   border-radius: 10px;
   padding: 16px;
 }
 .chart-title {
   font-size: 13px;
   font-weight: 700;
-  color: #c8d0f0;
-  margin-bottom: 3px;
+  color: #e8eeff;
+  margin-bottom: 2px;
 }
 .chart-sub {
   font-size: 10px;
-  color: #4a4a6a;
+  color: #7a82aa;
+  margin-bottom: 6px;
+}
+.chart-insight {
+  font-size: 10px;
+  color: #9ba3c8;
+  background: rgba(121,134,203,0.08);
+  border-left: 2px solid #5b6abf;
+  padding: 5px 8px;
   margin-bottom: 12px;
+  border-radius: 0 4px 4px 0;
+  line-height: 1.5;
 }
 .chart-block canvas {
   display: block;
@@ -786,26 +909,57 @@ input[type=range] {
   border-radius: 6px;
 }
 
-/* ── Heat legend ── */
+/* ── Heat legend (inside sidebar) ── */
 #heat-legend {
   display: none;
-  position: absolute;
-  bottom: 14px;
-  right: 14px;
-  background: rgba(10,10,15,.85);
-  border: 1px solid #2a2a3e;
-  border-radius: 6px;
-  padding: 8px 12px;
-  z-index: 40;
-  font-size: 10px;
-  color: #90a4ae;
+  background: rgba(8, 8, 18, 0.97);
+  border: 1px solid #3a3a5e;
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.75);
+  width: 200px;
+}
+.heat-legend-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9da8cc;
+  margin-bottom: 10px;
 }
 #heat-gradient {
-  width: 120px; height: 6px; border-radius: 3px;
-  background: linear-gradient(90deg, #e74c3c, #2980b9);
-  margin-bottom: 4px;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #e74c3c, #e67e22, #f1c40f, #27ae60, #2980b9);
+  margin-bottom: 10px;
 }
-.heat-labels { display: flex; justify-content: space-between; }
+.heat-stops {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.heat-stop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #7a86aa;
+  cursor: default;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background .1s, color .1s;
+}
+.heat-stop:hover { background: #16162a; color: #e0e0e0; }
+.heat-stop-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+#heat-tip {
+  margin-top: 8px;
+  font-size: 10px;
+  color: #4a4a6a;
+  min-height: 14px;
+  font-style: italic;
+}
 `;
 }
 
@@ -1347,14 +1501,17 @@ document.getElementById('btn-physics').addEventListener('click', () => {
   physicsOn = !physicsOn;
   network.setOptions({ physics: { enabled: physicsOn } });
   document.getElementById('btn-physics').classList.toggle('active', physicsOn);
+  document.getElementById('physics-speed-row').style.display = physicsOn ? 'flex' : 'none';
 });
 
-document.getElementById('btn-fullscreen').addEventListener('click', () => {
-  document.body.classList.toggle('fullscreen');
-  const fs = document.body.classList.contains('fullscreen');
-  document.getElementById('btn-fullscreen').classList.toggle('active', fs);
-  setTimeout(() => network.fit({ animation: false }), 220);
+document.getElementById('physics-speed').addEventListener('input', function() {
+  const v = parseInt(this.value); // 1..10
+  // Damping: high value = slow (lots of friction), low value = fast (little friction)
+  // Speed 1 → damping 0.9, Speed 10 → damping 0.05
+  const damping = 0.9 - (v - 1) * (0.85 / 9);
+  network.setOptions({ physics: { forceAtlas2Based: { damping: Math.round(damping * 100) / 100 } } });
 });
+
 
 document.getElementById('btn-png').addEventListener('click', () => {
   const canvas = document.querySelector('#graph canvas');
@@ -1375,16 +1532,58 @@ document.getElementById('btn-png').addEventListener('click', () => {
 // ── Feature 2: Cluster by directory ──────────────────────────────────────────
 let clusterActive = false;
 const clusterIds = [];
+let savedPositions = {};
+
+function setClusterButtonsVisible(visible) {
+  ['btn-focus', 'btn-path', 'btn-heat'].forEach(id => {
+    document.getElementById(id).style.display = visible ? '' : 'none';
+  });
+}
 
 document.getElementById('btn-cluster').addEventListener('click', () => {
   if (clusterActive) {
-    clusterIds.forEach(cid => { try { network.openCluster(cid); } catch(e) {} });
+    // ── Uncluster ─────────────────────────────────────────────────────────────
     clusterIds.length = 0;
     clusterActive = false;
     document.getElementById('btn-cluster').classList.remove('active');
-    // Defer so vis.js finishes re-inserting cluster members before we reset state
-    setTimeout(resetToEmpty, 50);
+
+    // Restore nodes at saved positions with physics off so they snap back exactly
+    network.setOptions({ physics: { enabled: false } });
+    nodesDS.clear();
+    edgesDS.clear();
+    nodesDS.add(NODES_DATA.map(n => ({
+      ...n,
+      hidden: false,
+      color: originalColors[n.id],
+      x: savedPositions[n.id] ? savedPositions[n.id].x : undefined,
+      y: savedPositions[n.id] ? savedPositions[n.id].y : undefined,
+    })));
+    edgesDS.add(EDGES_DATA.map(e => ({ ...e, hidden: false, color: originalEdgeColors[e.id] })));
+    network.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+
+    // Restore hidden buttons
+    setClusterButtonsVisible(true);
+
   } else {
+    // ── Cluster ───────────────────────────────────────────────────────────────
+
+    // Deactivate incompatible modes before clustering
+    if (heatActive) {
+      heatActive = false;
+      document.getElementById('btn-heat').classList.remove('active');
+      document.getElementById('heat-legend').style.display = 'none';
+      nodesDS.update(NODES_DATA.map(n => ({ id: n.id, color: originalColors[n.id] })));
+    }
+    if (focusActive) exitFocus();
+    if (pathMode) exitPath(true);
+    network.unselectAll();
+
+    // Snapshot positions before clustering
+    savedPositions = network.getPositions(NODES_DATA.map(n => n.id));
+
+    // Hide incompatible buttons
+    setClusterButtonsVisible(false);
+
     const dirs = [...new Set(NODES_DATA.map(n => n.dir).filter(Boolean))];
     dirs.forEach(dir => {
       const dirNodes = NODES_DATA.filter(n => n.dir === dir);
@@ -1400,6 +1599,12 @@ document.getElementById('btn-cluster').addEventListener('click', () => {
           font: { size: 13, color: '#c792ea', face: 'monospace' },
           borderWidth: 2,
           size: 20,
+        },
+        clusterEdgeProperties: {
+          color: { color: '#ffffff', opacity: 0.7 },
+          dashes: true,
+          width: 2,
+          smooth: { type: 'continuous' },
         },
         joinCondition: function(nodeOptions) { return nodeIds.has(nodeOptions.id); },
       });
@@ -1580,6 +1785,13 @@ document.getElementById('btn-heat').addEventListener('click', () => {
   }
 });
 
+// Heat stop hover tooltips
+document.querySelectorAll('.heat-stop').forEach(function(el) {
+  var tip = document.getElementById('heat-tip');
+  el.addEventListener('mouseenter', function() { if (tip) tip.textContent = el.dataset.tip || ''; });
+  el.addEventListener('mouseleave', function() { if (tip) tip.textContent = ''; });
+});
+
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
@@ -1632,14 +1844,6 @@ function resetToEmpty() {
     document.getElementById('heat-legend').style.display = 'none';
   }
 
-  // Reset clusters
-  if (clusterActive) {
-    clusterIds.forEach(cid => { try { network.openCluster(cid); } catch(ex) {} });
-    clusterIds.length = 0;
-    clusterActive = false;
-    document.getElementById('btn-cluster').classList.remove('active');
-  }
-
   // Reset context menu
   document.getElementById('ctx-menu').style.display = 'none';
   ctxNodeId = null;
@@ -1660,6 +1864,449 @@ function resetToEmpty() {
   });
 }
 
+// ── In/out degree precomputation ──────────────────────────────────────────────
+var _inDeg = null, _outDeg = null;
+function ensureInOutDeg() {
+  if (_inDeg) return;
+  _inDeg = {}; _outDeg = {};
+  NODES_DATA.forEach(function(n) { _inDeg[n.id] = 0; _outDeg[n.id] = 0; });
+  EDGES_DATA.forEach(function(e) {
+    _outDeg[e.from] = (_outDeg[e.from] || 0) + 1;
+    _inDeg[e.to]    = (_inDeg[e.to]    || 0) + 1;
+  });
+}
+
+// ── Shared horizontal bar renderer ────────────────────────────────────────────
+// rows: [{label, sublabel, value, color}], sorted descending, already sliced
+function drawHBar(canvasId, rows) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  if (!rows.length) {
+    ctx.fillStyle = '#5a6280'; ctx.font = '12px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('No data', W / 2, H / 2); return;
+  }
+  var maxVal = Math.max.apply(null, rows.map(function(r) { return r.value; })) || 1;
+  var PAD_L = 210, PAD_R = 60, PAD_T = 14, PAD_B = 14;
+  var barH = Math.floor((H - PAD_T - PAD_B) / rows.length);
+  var barGap = Math.max(2, Math.floor(barH * 0.2));
+  var barThick = barH - barGap;
+  var barMaxW = W - PAD_L - PAD_R;
+
+  ctx.strokeStyle = 'rgba(80,80,120,0.6)'; ctx.lineWidth = 1;
+  for (var g = 0; g <= 4; g++) {
+    var gx = PAD_L + Math.round((g / 4) * barMaxW);
+    ctx.beginPath(); ctx.moveTo(gx, PAD_T); ctx.lineTo(gx, H - PAD_B); ctx.stroke();
+  }
+
+  rows.forEach(function(row, i) {
+    var y = PAD_T + i * barH + Math.floor(barGap / 2);
+    var w = Math.max(4, Math.round((row.value / maxVal) * barMaxW));
+    var grad = ctx.createLinearGradient(PAD_L, 0, PAD_L + w, 0);
+    grad.addColorStop(0, row.color); grad.addColorStop(1, row.color + '88');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.roundRect(PAD_L, y, w, barThick, 3); ctx.fill();
+
+    var lbl = row.label.length > 28 ? row.label.slice(0, 26) + '\u2026' : row.label;
+    ctx.fillStyle = '#c8d4f0'; ctx.font = '11px monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText(lbl, PAD_L - 8, y + barThick / 2);
+    ctx.fillStyle = '#c792ea'; ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(row.value), PAD_L + w + 6, y + barThick / 2);
+  });
+}
+
+// ── Shared vertical bar renderer ──────────────────────────────────────────────
+// entries: [[label, value]], sorted descending, already sliced; colorFn(label,i)->color
+function drawVBar(canvasId, entries, colorFn) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  if (!entries.length) {
+    ctx.fillStyle = '#5a6280'; ctx.font = '12px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('No data', W / 2, H / 2); return;
+  }
+  var maxVal = Math.max.apply(null, entries.map(function(e) { return e[1]; })) || 1;
+  var N = entries.length;
+  var PAD_L = 32, PAD_R = 14, PAD_T = 14, PAD_B = 56;
+  var plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
+  var barW = Math.floor(plotW / N), barGap = Math.max(3, Math.floor(barW * 0.2));
+  var barThick = barW - barGap;
+
+  ctx.strokeStyle = 'rgba(80,80,120,0.6)'; ctx.lineWidth = 1;
+  for (var g = 1; g <= 4; g++) {
+    var gy = PAD_T + Math.round((1 - g / 4) * plotH);
+    ctx.beginPath(); ctx.moveTo(PAD_L, gy); ctx.lineTo(W - PAD_R, gy); ctx.stroke();
+    ctx.fillStyle = '#7a86aa'; ctx.font = '9px monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(Math.round(maxVal * g / 4)), PAD_L - 3, gy);
+  }
+
+  entries.forEach(function(entry, i) {
+    var lbl = entry[0], val = entry[1];
+    var x = PAD_L + i * barW + Math.floor(barGap / 2);
+    var bh = Math.max(2, Math.round((val / maxVal) * plotH));
+    var color = colorFn(lbl, i);
+    var grad = ctx.createLinearGradient(0, PAD_T + plotH - bh, 0, PAD_T + plotH);
+    grad.addColorStop(0, color); grad.addColorStop(1, color + '88');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.roundRect(x, PAD_T + plotH - bh, barThick, bh, 3); ctx.fill();
+    ctx.fillStyle = '#c792ea'; ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText(String(val), x + barThick / 2, PAD_T + plotH - bh - 2);
+    var short = lbl.length > 10 ? lbl.slice(0, 9) + '\u2026' : lbl;
+    ctx.save(); ctx.translate(x + barThick / 2, PAD_T + plotH + 6); ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = '#9ba3c8'; ctx.font = '9px monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText(short, 0, 0); ctx.restore();
+  });
+}
+
+// ── 4. Top callers ────────────────────────────────────────────────────────────
+function drawTopCallers() {
+  ensureInOutDeg();
+  var rows = NODES_DATA.slice()
+    .sort(function(a, b) { return (_outDeg[b.id] || 0) - (_outDeg[a.id] || 0); })
+    .slice(0, 15).filter(function(n) { return (_outDeg[n.id] || 0) > 0; })
+    .map(function(n) { return { label: n.label, sublabel: n.kind, value: _outDeg[n.id] || 0, color: KIND_COLORS[n.kind] || '#546e7a' }; });
+  drawHBar('chart-callers', rows);
+}
+
+// ── 5. Top callees ────────────────────────────────────────────────────────────
+function drawTopCallees() {
+  ensureInOutDeg();
+  var rows = NODES_DATA.slice()
+    .sort(function(a, b) { return (_inDeg[b.id] || 0) - (_inDeg[a.id] || 0); })
+    .slice(0, 15).filter(function(n) { return (_inDeg[n.id] || 0) > 0; })
+    .map(function(n) { return { label: n.label, sublabel: n.kind, value: _inDeg[n.id] || 0, color: KIND_COLORS[n.kind] || '#546e7a' }; });
+  drawHBar('chart-callees', rows);
+}
+
+// ── 6. Files by symbol count ──────────────────────────────────────────────────
+function drawFilesBySymbolCount() {
+  var counts = {};
+  NODES_DATA.forEach(function(n) { counts[n.filePath] = (counts[n.filePath] || 0) + 1; });
+  var rows = Object.entries(counts)
+    .sort(function(a, b) { return b[1] - a[1]; }).slice(0, 15)
+    .map(function(e) {
+      var parts = e[0].split('/');
+      var short = parts.length > 2 ? '\u2026/' + parts.slice(-2).join('/') : e[0];
+      return { label: short, sublabel: e[0], value: e[1], color: '#7986cb' };
+    });
+  drawHBar('chart-files', rows);
+}
+
+// ── 7. Edge kind distribution ─────────────────────────────────────────────────
+function drawEdgeKindDistribution() {
+  var canvas = document.getElementById('chart-edgekinds');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  var counts = {};
+  EDGES_DATA.forEach(function(e) { counts[e.ekind] = (counts[e.ekind] || 0) + 1; });
+  var entries = Object.entries(counts).sort(function(a, b) { return b[1] - a[1]; });
+  var total = EDGES_DATA.length || 1;
+  var cx = Math.round(W * 0.35), cy = H / 2;
+  var outerR = Math.min(cx, cy) - 16, innerR = outerR * 0.5;
+  var startAngle = -Math.PI / 2;
+
+  entries.forEach(function(entry) {
+    var kind = entry[0], count = entry[1];
+    var angle = (count / total) * 2 * Math.PI;
+    var color = EDGE_COLORS[kind] || '#546e7a';
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, outerR, startAngle, startAngle + angle);
+    ctx.closePath(); ctx.fillStyle = color; ctx.fill();
+    ctx.strokeStyle = '#0d0d1a'; ctx.lineWidth = 2; ctx.stroke();
+    startAngle += angle;
+  });
+
+  ctx.beginPath(); ctx.arc(cx, cy, innerR, 0, 2 * Math.PI);
+  ctx.fillStyle = '#0d0d1a'; ctx.fill();
+  ctx.fillStyle = '#c792ea'; ctx.font = 'bold 18px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(String(EDGES_DATA.length), cx, cy - 7);
+  ctx.fillStyle = '#7a86aa'; ctx.font = '10px monospace';
+  ctx.fillText('edges', cx, cy + 9);
+
+  var LEG_X = Math.round(W * 0.64), rowH = Math.floor((H - 28) / Math.min(entries.length, 12));
+  entries.slice(0, 12).forEach(function(entry, i) {
+    var kind = entry[0], count = entry[1];
+    var y = 14 + i * rowH;
+    var color = EDGE_COLORS[kind] || '#546e7a';
+    ctx.fillStyle = color; ctx.fillRect(LEG_X, y + Math.floor(rowH / 2) - 2, 14, 3);
+    ctx.fillStyle = '#b0c4d8'; ctx.font = '11px monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(kind, LEG_X + 18, y + rowH / 2);
+    ctx.fillStyle = '#7a86aa'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
+    ctx.fillText(count + '  ' + ((count / total) * 100).toFixed(1) + '%', W - 6, y + rowH / 2);
+  });
+}
+
+// ── 8. Dead code by kind ──────────────────────────────────────────────────────
+function drawDeadCodeByKind() {
+  ensureInOutDeg();
+  var canvas = document.getElementById('chart-deadcode');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  var counts = {};
+  NODES_DATA.forEach(function(n) {
+    if (!n.isExported && (_inDeg[n.id] || 0) === 0)
+      counts[n.kind] = (counts[n.kind] || 0) + 1;
+  });
+  var entries = Object.entries(counts).sort(function(a, b) { return b[1] - a[1]; });
+  if (!entries.length) {
+    ctx.fillStyle = '#27ae60'; ctx.font = '13px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('\u2713 No dead code detected', W / 2, H / 2); return;
+  }
+  drawVBar('chart-deadcode', entries, function(kind) { return KIND_COLORS[kind] || '#546e7a'; });
+}
+
+// ── 9. Exported vs unexported by kind ─────────────────────────────────────────
+function drawExportedRatio() {
+  var canvas = document.getElementById('chart-exported');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  var kindData = {};
+  NODES_DATA.forEach(function(n) {
+    if (!kindData[n.kind]) kindData[n.kind] = { exp: 0, unexp: 0 };
+    if (n.isExported) kindData[n.kind].exp++; else kindData[n.kind].unexp++;
+  });
+  var entries = Object.entries(kindData)
+    .sort(function(a, b) { return (b[1].exp + b[1].unexp) - (a[1].exp + a[1].unexp); })
+    .slice(0, 16);
+  var N = entries.length;
+  if (!N) return;
+
+  var PAD_L = 96, PAD_R = 100, PAD_T = 32, PAD_B = 14;
+  var rowH = Math.floor((H - PAD_T - PAD_B) / N);
+  var rowGap = Math.max(2, Math.floor(rowH * 0.25));
+  var barThick = rowH - rowGap;
+  var barMaxW = W - PAD_L - PAD_R;
+
+  // Legend
+  ctx.fillStyle = '#c792ea'; ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText('\u25A0 Exported', PAD_L, 10);
+  ctx.fillStyle = '#7a86aa'; ctx.fillText('\u25A0 Unexported', PAD_L + 88, 10);
+
+  entries.forEach(function(entry, i) {
+    var kind = entry[0], d = entry[1];
+    var total = d.exp + d.unexp;
+    var y = PAD_T + i * rowH + Math.floor(rowGap / 2);
+    var expW = Math.round((d.exp / total) * barMaxW);
+    var color = KIND_COLORS[kind] || '#546e7a';
+
+    if (expW > 0) {
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.roundRect(PAD_L, y, expW, barThick, [3, 0, 0, 3]); ctx.fill();
+    }
+    if (expW < barMaxW) {
+      ctx.fillStyle = color + '44';
+      ctx.beginPath(); ctx.roundRect(PAD_L + expW, y, barMaxW - expW, barThick, [0, 3, 3, 0]); ctx.fill();
+    }
+
+    ctx.fillStyle = '#b0c4d8'; ctx.font = '11px monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText(kind, PAD_L - 8, y + barThick / 2);
+    ctx.fillStyle = '#7a86aa'; ctx.font = '10px monospace'; ctx.textAlign = 'left';
+    ctx.fillText(d.exp + ' / ' + total, W - PAD_R + 8, y + barThick / 2);
+  });
+}
+
+// ── 10. Directory coupling matrix ─────────────────────────────────────────────
+function drawDirectoryCoupling() {
+  var canvas = document.getElementById('chart-coupling');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  var dirCounts = {};
+  NODES_DATA.forEach(function(n) { if (n.dir) dirCounts[n.dir] = (dirCounts[n.dir] || 0) + 1; });
+  var dirs = Object.keys(dirCounts).sort(function(a, b) { return dirCounts[b] - dirCounts[a]; }).slice(0, 12);
+  var N = dirs.length;
+  if (N < 2) {
+    ctx.fillStyle = '#5a6280'; ctx.font = '12px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Not enough directories', W / 2, H / 2); return;
+  }
+
+  var dirIdx = {};
+  dirs.forEach(function(d, i) { dirIdx[d] = i; });
+  var nodeDir = {};
+  NODES_DATA.forEach(function(n) { if (n.dir) nodeDir[n.id] = n.dir; });
+
+  var matrix = [];
+  for (var i = 0; i < N; i++) { matrix.push([]); for (var j = 0; j < N; j++) matrix[i].push(0); }
+  EDGES_DATA.forEach(function(e) {
+    var fd = nodeDir[e.from], td = nodeDir[e.to];
+    if (fd && td && fd !== td && dirIdx[fd] !== undefined && dirIdx[td] !== undefined)
+      matrix[dirIdx[fd]][dirIdx[td]]++;
+  });
+  var maxVal = 0;
+  for (var i = 0; i < N; i++) for (var j = 0; j < N; j++) if (matrix[i][j] > maxVal) maxVal = matrix[i][j];
+
+  // Layout: row labels on the left, column labels at the bottom
+  var PAD_TOP = 10, PAD_RIGHT = 14;
+  var LABEL_W = 150;   // left margin for row labels
+  var LABEL_BOT = 100; // bottom margin for column labels (rotated 45°)
+
+  var matrixW = W - LABEL_W - PAD_RIGHT;
+  var matrixH = H - PAD_TOP - LABEL_BOT;
+  var cellW = Math.floor(matrixW / N);
+  var cellH = Math.floor(matrixH / N);
+  var matrixTop = PAD_TOP;
+  var matrixLeft = LABEL_W;
+
+  // ── Matrix cells ──────────────────────────────────────────────────────────────
+  dirs.forEach(function(d, i) {
+    var y = matrixTop + i * cellH;
+    dirs.forEach(function(d2, j) {
+      var x = matrixLeft + j * cellW;
+      var val = matrix[i][j];
+      var intensity = maxVal > 0 ? val / maxVal : 0;
+      ctx.fillStyle = i === j
+        ? 'rgba(20,20,48,0.8)'
+        : 'rgba(121,134,203,' + (0.07 + intensity * 0.88).toFixed(2) + ')';
+      ctx.fillRect(x + 1, y + 1, cellW - 2, cellH - 2);
+      if (val > 0 && i !== j) {
+        ctx.fillStyle = intensity > 0.45 ? '#ffffff' : '#b0badd';
+        ctx.font = 'bold ' + (cellW > 42 ? '11' : '9') + 'px monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(val), x + cellW / 2, y + cellH / 2);
+      }
+    });
+  });
+
+  // ── Row labels (left, right-aligned, white) ───────────────────────────────────
+  dirs.forEach(function(d, i) {
+    var y = matrixTop + i * cellH + cellH / 2;
+    var short = d.length > 18 ? d.slice(0, 16) + '\u2026' : d;
+    ctx.fillStyle = '#ffffff'; ctx.font = '11px monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText(short, matrixLeft - 8, y);
+  });
+
+  // ── Column labels (bottom, rotated -45°, white) ───────────────────────────────
+  dirs.forEach(function(d, j) {
+    var x = matrixLeft + j * cellW + cellW / 2;
+    var y = matrixTop + matrixH + 8;
+    var short = d.length > 18 ? d.slice(0, 16) + '\u2026' : d;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.PI / 4); // 45° downward-right → reads bottom-left to top-right
+    ctx.fillStyle = '#ffffff'; ctx.font = '9px monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(short, 0, 0);
+    ctx.restore();
+  });
+}
+
+// ── 11. Symbol count per directory ────────────────────────────────────────────
+function drawSymbolCountPerDir() {
+  var counts = {};
+  NODES_DATA.forEach(function(n) { if (n.dir) counts[n.dir] = (counts[n.dir] || 0) + 1; });
+  var entries = Object.entries(counts).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 15);
+  drawVBar('chart-dirs', entries, function(lbl, i) {
+    var hue = (i * 37) % 360;
+    return 'hsl(' + hue + ',55%,45%)';
+  });
+}
+
+// ── 12. In/out scatter ────────────────────────────────────────────────────────
+function drawInOutScatter() {
+  ensureInOutDeg();
+  var canvas = document.getElementById('chart-scatter');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  var PAD_L = 46, PAD_R = 14, PAD_T = 14, PAD_B = 46;
+  var plotW = W - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B;
+  var maxOut = 1, maxIn = 1;
+  NODES_DATA.forEach(function(n) {
+    if ((_outDeg[n.id] || 0) > maxOut) maxOut = _outDeg[n.id];
+    if ((_inDeg[n.id]  || 0) > maxIn)  maxIn  = _inDeg[n.id];
+  });
+
+  // Grid + axis labels
+  ctx.strokeStyle = 'rgba(80,80,120,0.6)'; ctx.lineWidth = 1;
+  for (var g = 0; g <= 4; g++) {
+    var gx = PAD_L + Math.round((g / 4) * plotW);
+    var gy = PAD_T + Math.round((g / 4) * plotH);
+    ctx.beginPath(); ctx.moveTo(gx, PAD_T); ctx.lineTo(gx, PAD_T + plotH); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(PAD_L, gy); ctx.lineTo(PAD_L + plotW, gy); ctx.stroke();
+    if (g > 0) {
+      ctx.fillStyle = '#7a86aa'; ctx.font = '9px monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(Math.round(maxOut * g / 4), gx, PAD_T + plotH + 4);
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      ctx.fillText(Math.round(maxIn * (1 - g / 4)), PAD_L - 3, PAD_T + Math.round((g / 4) * plotH));
+    }
+  }
+
+  // Quadrant labels
+  ctx.fillStyle = 'rgba(121,134,203,0.35)'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Hubs',    PAD_L + plotW * 0.75, PAD_T + plotH * 0.12);
+  ctx.fillText('Sources', PAD_L + plotW * 0.75, PAD_T + plotH * 0.88);
+  ctx.fillText('Sinks',   PAD_L + plotW * 0.25, PAD_T + plotH * 0.12);
+  ctx.fillText('Isolated',PAD_L + plotW * 0.25, PAD_T + plotH * 0.88);
+
+  // Dots
+  ctx.globalAlpha = 0.72;
+  NODES_DATA.forEach(function(n) {
+    var ox = _outDeg[n.id] || 0, iy = _inDeg[n.id] || 0;
+    var x = PAD_L + Math.round((ox / maxOut) * plotW);
+    var y = PAD_T + Math.round((1 - iy / maxIn) * plotH);
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, 2 * Math.PI);
+    ctx.fillStyle = KIND_COLORS[n.kind] || '#546e7a'; ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // Axis labels
+  ctx.fillStyle = '#7a86aa'; ctx.font = '10px monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('out-degree (calls made)', PAD_L + plotW / 2, H);
+  ctx.save(); ctx.translate(11, PAD_T + plotH / 2); ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('in-degree (times referenced)', 0, 0); ctx.restore();
+}
+
+// ── 13. Average degree per file ───────────────────────────────────────────────
+function drawAvgDegreePerFile() {
+  var fileDeg = {}, fileCount = {};
+  NODES_DATA.forEach(function(n) {
+    fileDeg[n.filePath]   = (fileDeg[n.filePath]   || 0) + n.degree;
+    fileCount[n.filePath] = (fileCount[n.filePath] || 0) + 1;
+  });
+  var rows = Object.keys(fileDeg).map(function(fp) {
+    var avg = fileDeg[fp] / fileCount[fp];
+    var parts = fp.split('/');
+    var short = parts.length > 2 ? '\u2026/' + parts.slice(-2).join('/') : fp;
+    return { label: short, sublabel: fileCount[fp] + ' symbols', value: Math.round(avg * 10) / 10, color: '#00838f' };
+  }).sort(function(a, b) { return b.value - a.value; }).slice(0, 15);
+  drawHBar('chart-avgdeg', rows);
+}
+
 // ── Charts modal ─────────────────────────────────────────────────────────────
 document.getElementById('btn-charts').addEventListener('click', function() {
   document.getElementById('charts-modal').style.display = 'flex';
@@ -1673,9 +2320,15 @@ document.getElementById('charts-modal').addEventListener('click', function(e) {
 });
 
 function drawCharts() {
-  drawBarChart();
-  drawPieChart();
-  drawLineChart();
+  [
+    drawBarChart, drawPieChart, drawLineChart,
+    drawTopCallers, drawTopCallees, drawFilesBySymbolCount,
+    drawEdgeKindDistribution, drawDeadCodeByKind, drawExportedRatio,
+    drawDirectoryCoupling, drawSymbolCountPerDir, drawInOutScatter,
+    drawAvgDegreePerFile,
+  ].forEach(function(fn) {
+    try { fn(); } catch(e) { console.warn('[kirograph chart] ' + fn.name + ':', e); }
+  });
 }
 
 // ── Bar chart: Top 15 most connected symbols ──────────────────────────────────
@@ -1696,7 +2349,7 @@ function drawBarChart() {
   var barMaxW = W - PAD_L - PAD_R;
 
   // Grid lines
-  ctx.strokeStyle = 'rgba(42,42,62,0.7)';
+  ctx.strokeStyle = 'rgba(80,80,120,0.6)';
   ctx.lineWidth = 1;
   for (var g = 0; g <= 4; g++) {
     var gx = PAD_L + Math.round((g / 4) * barMaxW);
@@ -1719,16 +2372,11 @@ function drawBarChart() {
 
     // Node label
     var label = n.label.length > 22 ? n.label.slice(0, 20) + '\\u2026' : n.label;
-    ctx.fillStyle = '#90a4ae';
+    ctx.fillStyle = '#c8d4f0';
     ctx.font = '11px monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, PAD_L - 8, y + barThick / 2);
-
-    // Kind badge
-    ctx.fillStyle = '#37474f';
-    ctx.font = '9px monospace';
-    ctx.fillText(n.kind, PAD_L - 8, y + barThick / 2 + 11);
 
     // Degree value
     ctx.fillStyle = '#c792ea';
@@ -1789,7 +2437,7 @@ function drawPieChart() {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(String(total), cx, cy - 7);
-  ctx.fillStyle = '#37474f';
+  ctx.fillStyle = '#7a86aa';
   ctx.font = '10px monospace';
   ctx.fillText('nodes', cx, cy + 10);
 
@@ -1806,13 +2454,13 @@ function drawPieChart() {
     ctx.beginPath();
     ctx.roundRect(LEG_X, y + Math.floor(rowH / 2) - 5, 10, 10, 2);
     ctx.fill();
-    ctx.fillStyle = '#90a4ae';
+    ctx.fillStyle = '#c8d4f0';
     ctx.font = '11px monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(kind, LEG_X + 14, y + rowH / 2);
     var pct = ((count / total) * 100).toFixed(1);
-    ctx.fillStyle = '#546e7a';
+    ctx.fillStyle = '#7a86aa';
     ctx.font = '10px monospace';
     ctx.textAlign = 'right';
     ctx.fillText(count + '  ' + pct + '%', W - 8, y + rowH / 2);
@@ -1828,7 +2476,8 @@ function drawLineChart() {
 
   var degMap = {};
   NODES_DATA.forEach(function(n) { degMap[n.degree] = (degMap[n.degree] || 0) + 1; });
-  var maxDegVal = Math.max.apply(null, [0].concat(Object.keys(degMap).map(Number)));
+  var maxDegVal = 0;
+  Object.keys(degMap).forEach(function(k) { var v = Number(k); if (v > maxDegVal) maxDegVal = v; });
   if (maxDegVal === 0) return;
 
   var BINS = Math.min(40, maxDegVal + 1);
@@ -1839,20 +2488,21 @@ function drawLineChart() {
     for (var d = b * binSize; d < (b + 1) * binSize; d++) cnt += degMap[d] || 0;
     bins.push({ deg: b * binSize, count: cnt });
   }
-  var maxCount = Math.max.apply(null, [1].concat(bins.map(function(b) { return b.count; })));
+  var maxCount = 1;
+  bins.forEach(function(b) { if (b.count > maxCount) maxCount = b.count; });
 
   var PAD_L = 44, PAD_R = 14, PAD_T = 14, PAD_B = 36;
   var plotW = W - PAD_L - PAD_R;
   var plotH = H - PAD_T - PAD_B;
 
   // Grid
-  ctx.strokeStyle = 'rgba(42,42,62,0.7)';
+  ctx.strokeStyle = 'rgba(80,80,120,0.6)';
   ctx.lineWidth = 1;
   for (var g = 0; g <= 4; g++) {
     var gy = PAD_T + Math.round((g / 4) * plotH);
     ctx.beginPath(); ctx.moveTo(PAD_L, gy); ctx.lineTo(W - PAD_R, gy); ctx.stroke();
     var gval = Math.round(maxCount * (1 - g / 4));
-    ctx.fillStyle = '#37474f';
+    ctx.fillStyle = '#7a86aa';
     ctx.font = '9px monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
@@ -1868,8 +2518,8 @@ function drawLineChart() {
 
   // Area fill
   var areaGrad = ctx.createLinearGradient(0, PAD_T, 0, PAD_T + plotH);
-  areaGrad.addColorStop(0, 'rgba(121,134,203,0.35)');
-  areaGrad.addColorStop(1, 'rgba(121,134,203,0.02)');
+  areaGrad.addColorStop(0, 'rgba(121,134,203,0.55)');
+  areaGrad.addColorStop(1, 'rgba(121,134,203,0.04)');
 
   ctx.beginPath();
   ctx.moveTo(pts[0].x, PAD_T + plotH);
@@ -1882,8 +2532,8 @@ function drawLineChart() {
   // Line
   ctx.beginPath();
   pts.forEach(function(p, i) { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
-  ctx.strokeStyle = '#7986cb';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#9fa8da';
+  ctx.lineWidth = 2.5;
   ctx.lineJoin = 'round';
   ctx.stroke();
 
@@ -1897,7 +2547,7 @@ function drawLineChart() {
 
   // X axis labels
   var labelStep = Math.ceil(BINS / 8);
-  ctx.fillStyle = '#37474f';
+  ctx.fillStyle = '#7a86aa';
   ctx.font = '9px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
@@ -1907,7 +2557,7 @@ function drawLineChart() {
   });
 
   // X axis label
-  ctx.fillStyle = '#546e7a';
+  ctx.fillStyle = '#9ba3c8';
   ctx.font = '10px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
@@ -1922,14 +2572,64 @@ function esc(s) {
 `;
 }
 
+function printExportHelp(): void {
+  const c = {
+    reset:        '\x1b[0m',
+    bold:         '\x1b[1m',
+    dim:          '\x1b[2m',
+    violet:       '\x1b[38;5;99m',
+    lavender:     '\x1b[38;5;141m',
+    paleLavender: '\x1b[38;5;183m',
+    purple:       '\x1b[38;5;135m',
+    gray:         '\x1b[90m',
+  };
+
+  console.log(`\n${c.bold}${c.paleLavender}USAGE${c.reset}`);
+  console.log(`  ${c.lavender}kirograph export${c.reset} ${c.gray}<command>${c.reset} ${c.dim}[options] [path]${c.reset}\n`);
+
+  console.log(`${c.bold}${c.paleLavender}COMMANDS${c.reset}\n`);
+
+  const cmds = [
+    { name: 'build', args: '[path]', desc: 'Generate the dashboard in .kirograph/export/' },
+    { name: 'start', args: '[path]', desc: 'Generate the dashboard and open it in the browser' },
+  ];
+  const nameWidth = Math.max(...cmds.map(c => (c.name + ' ' + c.args).length)) + 2;
+  for (const cmd of cmds) {
+    const sig = cmd.name + ' ' + cmd.args;
+    const pad = ' '.repeat(Math.max(0, nameWidth - sig.length));
+    console.log(`  ${c.lavender}${cmd.name}${c.reset} ${c.dim}${cmd.args}${c.reset}${pad}${c.gray}${cmd.desc}${c.reset}`);
+  }
+
+  console.log(`\n${c.bold}${c.paleLavender}OPTIONS${c.reset}\n`);
+  console.log(`  ${c.purple}-o, --output <dir>${c.reset}   ${c.gray}Custom output directory${c.reset}`);
+  console.log(`  ${c.purple}--include-contains${c.reset}   ${c.gray}Include structural contains edges (adds noise, off by default)${c.reset}`);
+  console.log(`  ${c.purple}-h, --help${c.reset}           ${c.gray}Show this help${c.reset}\n`);
+
+  console.log(`${c.bold}${c.paleLavender}EXAMPLES${c.reset}\n`);
+  const examples: [string, string][] = [
+    ['kirograph export start',                  'Generate and open the dashboard in the browser'],
+    ['kirograph export build',                  'Generate only (no browser)'],
+    ['kirograph export build -o /tmp/graph',    'Write dashboard files to a custom directory'],
+    ['kirograph export start --include-contains', 'Include structural contains edges'],
+  ];
+  for (const [ex, desc] of examples) {
+    console.log(`  ${c.violet}$${c.reset} ${c.lavender}${ex}${c.reset}`);
+    console.log(`    ${c.dim}${desc}${c.reset}`);
+  }
+  console.log();
+}
+
 export function register(program: Command): void {
   const exportCmd = program
     .command('export')
-    .description('Export the graph as an interactive HTML visualization');
+    .description('Export the graph as an interactive dashboard');
+
+  exportCmd.configureHelp({ formatHelp: () => '' });
+  exportCmd.helpInformation = () => { printExportHelp(); return ''; };
 
   exportCmd
     .command('build [projectPath]')
-    .description('Generate the visualization (default: .kirograph/export/)')
+    .description('Generate the dashboard files in .kirograph/export/')
     .option('-o, --output <dir>', 'Output directory path')
     .option('--include-contains', 'Include structural contains edges (adds noise, off by default)', false)
     .action(async (projectPath, opts) => {
@@ -1938,7 +2638,7 @@ export function register(program: Command): void {
 
   exportCmd
     .command('start [projectPath]')
-    .description('Generate the visualization and open it in the browser')
+    .description('Generate the dashboard files and open in the browser')
     .option('-o, --output <dir>', 'Output directory path')
     .option('--include-contains', 'Include structural contains edges (adds noise, off by default)', false)
     .action(async (projectPath, opts) => {
