@@ -26,7 +26,7 @@ import type { GraphSnapshot, GraphDiff } from './core/snapshot';
 
 export type { GraphSnapshot, GraphDiff };
 import type {
-  Node, NodeKind, IndexResult, IndexProgress, SyncResult, TaskContext,
+  Node, Edge, NodeKind, IndexResult, IndexProgress, SyncResult, TaskContext,
   SearchResult, SearchOptions, NodeContext, NodeMetrics,
 } from './types';
 import type { ArchitectureResult } from './architecture/types';
@@ -133,6 +133,8 @@ export default class KiroGraph {
   async getCallers(nodeId: string, limit = 30): Promise<Node[]> { return this.queryManager.getCallers(nodeId, limit); }
   async getCallees(nodeId: string, limit = 30): Promise<Node[]> { return this.queryManager.getCallees(nodeId, limit); }
   async getImpactRadius(nodeId: string, depth = 2): Promise<Node[]> { return this.queryManager.getImpactRadius(nodeId, depth); }
+  getAllNodes(): Node[] { return this.db.getAllNodes(); }
+  getAllEdges(): Edge[] { return this.db.getAllEdges(); }
   findDeadCode(limit = 50): Node[] { return this.db.findDeadCode(limit); }
   findCircularDependencies(): string[][] { return this.db.findCircularDependencies(); }
   async findPath(fromId: string, toId: string, maxDepth = 10): Promise<Node[]> { return this.queryManager.findPath(fromId, toId, maxDepth); }
