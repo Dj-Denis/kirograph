@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.12.0] - 2026-04-20
+## [0.11.0] - 2026-04-20
 
 ### Added
 
@@ -13,28 +13,6 @@
 - **Right-click menu** — focus neighbors, start a path, copy ID or file path, highlight all nodes of the same kind
 - **Heat map** — color nodes by how recently their file was modified, to spot the most active areas of the codebase
 - **Analytics charts** — bar chart of the most connected symbols, donut chart of node distribution by kind, degree distribution curve
-
----
-
-## [0.11.0] - 2026-04-18
-
-### Added
-
-- `kirograph export build [path]` — generates a self-contained interactive HTML graph at `.kirograph/kirograph.html` (or custom path via `-o`); no server required, works offline
-- `kirograph export start [path]` — same as `build` but also opens the result in the default browser
-- Interactive HTML visualization features: color-coded nodes by kind, edge kind labels, directed arrows, force-directed layout (vis.js ForceAtlas2)
-- **Focus mode** (`◎ Focus`) — shows selected node and its direct neighbors only; Escape or double-click background to exit
-- **Path highlight** (`⟶ Path`) — two-click selection runs client-side BFS, highlights shortest path in gold, dims all other nodes/edges, shows hop list in detail panel
-- **Node kind filter** — Legend tab; click any kind to batch-hide/show all nodes of that type
-- **Edge kind filter** — Legend tab; click any edge kind to hide/show all edges of that type
-- **Degree filter slider** — Filters tab; hides nodes below N connections to surface the most-connected symbols
-- **Detail panel** — click a node to see kind, file, line, degree, signature, and copy `file:line` reference
-- **History breadcrumb** — ‹ › navigation through previously inspected nodes (50-entry trail)
-- **Export PNG** — 📷 captures current viewport composited on the dark background
-- **Fullscreen** — ⛶ collapses side panel; graph re-fits automatically
-- **Keyboard shortcuts** — `f` to fit, `Esc` to exit focus/path mode
-- Loader spinner with backdrop blur for all bulk visibility operations (batched via single `DataSet.update()` call)
-- `getAllNodes()` and `getAllEdges()` exposed on the `KiroGraph` facade
 
 ### Fixed
 
