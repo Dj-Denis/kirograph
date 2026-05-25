@@ -1,5 +1,5 @@
 /**
- * KiroGraph Installer — Kiro steering file
+ * KiroGraph Installer: Kiro steering file
  */
 
 import * as fs from 'fs';
@@ -36,12 +36,18 @@ KiroGraph builds a semantic knowledge graph of your codebase. Use its MCP tools 
 | What packages/layers exist? | \`kirograph_architecture\` |
 | How coupled is package X? | \`kirograph_coupling\` |
 | What does package X depend on? | \`kirograph_package\` |
+| Run a command with token savings | \`kirograph_exec\` |
+| Check token savings stats | \`kirograph_gain\` |
+| What data files are indexed? | \`kirograph_data_list\` |
+| What columns does this dataset have? | \`kirograph_data_describe\` |
+| Query rows with filters | \`kirograph_data_query\` |
+| Aggregate data (sum, avg, count) | \`kirograph_data_aggregate\` |
 
 ---
 
 ## Tool reference
 
-### \`kirograph_context\` — **start here for any code task**
+### \`kirograph_context\`: **start here for any code task**
 
 Returns entry points, related symbols, and code snippets for a natural-language task description. Usually enough to orient without any additional tool calls.
 
@@ -51,7 +57,7 @@ kirograph_context(task: "add dark mode", maxNodes: 30)
 kirograph_context(task: "refactor payment service", includeCode: false)
 \`\`\`
 
-### \`kirograph_search\` — find symbols by name
+### \`kirograph_search\`: find symbols by name
 
 Exact match → FTS → LIKE fallback → vector (last resort). Use instead of grep.
 
@@ -63,7 +69,7 @@ kirograph_search(query: "auth", limit: 20)
 
 Supported kinds: \`function\`, \`method\`, \`class\`, \`interface\`, \`type_alias\`, \`variable\`, \`route\`, \`component\`
 
-### \`kirograph_node\` — inspect a symbol
+### \`kirograph_node\`: inspect a symbol
 
 Returns kind, file, signature, docstring. Add \`includeCode: true\` to get the full source.
 
@@ -72,7 +78,7 @@ kirograph_node(symbol: "validateToken")
 kirograph_node(symbol: "AuthService", includeCode: true)
 \`\`\`
 
-### \`kirograph_callers\` — who calls this?
+### \`kirograph_callers\`: who calls this?
 
 BFS over incoming \`calls\` edges (depth 1).
 
@@ -80,7 +86,7 @@ BFS over incoming \`calls\` edges (depth 1).
 kirograph_callers(symbol: "processPayment", limit: 30)
 \`\`\`
 
-### \`kirograph_callees\` — what does this call?
+### \`kirograph_callees\`: what does this call?
 
 BFS over outgoing \`calls\` edges (depth 1).
 
@@ -88,7 +94,7 @@ BFS over outgoing \`calls\` edges (depth 1).
 kirograph_callees(symbol: "handleRequest")
 \`\`\`
 
-### \`kirograph_impact\` — blast radius before a change
+### \`kirograph_impact\`: blast radius before a change
 
 Traverses all incoming edges up to \`depth\` hops. Call this before editing a symbol.
 
@@ -96,7 +102,7 @@ Traverses all incoming edges up to \`depth\` hops. Call this before editing a sy
 kirograph_impact(symbol: "UserRepository", depth: 3)
 \`\`\`
 
-### \`kirograph_path\` — how are two symbols connected?
+### \`kirograph_path\`: how are two symbols connected?
 
 BFS shortest path across all edge types.
 
@@ -104,7 +110,7 @@ BFS shortest path across all edge types.
 kirograph_path(from: "LoginController", to: "DatabasePool")
 \`\`\`
 
-### \`kirograph_type_hierarchy\` — class/interface inheritance
+### \`kirograph_type_hierarchy\`: class/interface inheritance
 
 \`\`\`
 kirograph_type_hierarchy(symbol: "BaseRepository", direction: "down")  // derived types
@@ -112,7 +118,7 @@ kirograph_type_hierarchy(symbol: "PaymentService", direction: "up")    // base t
 kirograph_type_hierarchy(symbol: "IUserStore", direction: "both")      // all
 \`\`\`
 
-### \`kirograph_dead_code\` — unreferenced symbols
+### \`kirograph_dead_code\`: unreferenced symbols
 
 Returns unexported symbols with zero incoming edges. Good first step when cleaning up.
 
@@ -120,7 +126,7 @@ Returns unexported symbols with zero incoming edges. Good first step when cleani
 kirograph_dead_code(limit: 50)
 \`\`\`
 
-### \`kirograph_circular_deps\` — import cycles
+### \`kirograph_circular_deps\`: import cycles
 
 Runs Tarjan's SCC over import edges. No parameters needed.
 
@@ -128,7 +134,7 @@ Runs Tarjan's SCC over import edges. No parameters needed.
 kirograph_circular_deps()
 \`\`\`
 
-### \`kirograph_files\` — indexed file structure
+### \`kirograph_files\`: indexed file structure
 
 \`\`\`
 kirograph_files(format: "tree")                          // default
@@ -138,11 +144,11 @@ kirograph_files(filterPath: "src/auth", maxDepth: 2)
 kirograph_files(pattern: "**/*.test.ts")
 \`\`\`
 
-### \`kirograph_status\` — index health
+### \`kirograph_status\`: index health
 
 Returns file count, symbol count, edge count, embedding coverage, DB size. Call when something feels off.
 
-### \`kirograph_hotspots\` — most-connected symbols
+### \`kirograph_hotspots\`: most-connected symbols
 
 Returns the top-N symbols by total edge degree (in + out, excluding structural \`contains\` edges). Use to find core abstractions, identify high blast-radius symbols before a refactor, or understand what the codebase revolves around.
 
@@ -150,7 +156,7 @@ Returns the top-N symbols by total edge degree (in + out, excluding structural \
 kirograph_hotspots(limit: 20)
 \`\`\`
 
-### \`kirograph_surprising\` — unexpected cross-module coupling
+### \`kirograph_surprising\`: unexpected cross-module coupling
 
 Finds direct edges between symbols in structurally distant files, scored by path distance × edge-kind weight. Use before a refactor to discover hidden dependencies that will break. High score = more unexpected.
 
@@ -158,9 +164,9 @@ Finds direct edges between symbols in structurally distant files, scored by path
 kirograph_surprising(limit: 20)
 \`\`\`
 
-### \`kirograph_diff\` — what changed since a snapshot?
+### \`kirograph_diff\`: what changed since a snapshot?
 
-Compares the current graph against a saved snapshot. Shows added/removed symbols and edges. A snapshot must exist — the user saves one with \`kirograph snapshot save <label>\` before making changes.
+Compares the current graph against a saved snapshot. Shows added/removed symbols and edges. A snapshot must exist: the user saves one with \`kirograph snapshot save <label>\` before making changes.
 
 \`\`\`
 kirograph_diff()                              // vs latest snapshot
@@ -171,7 +177,7 @@ kirograph_diff(snapshot: "pre-refactor")     // vs named snapshot
 
 ## Architecture tools *(require \`enableArchitecture: true\` in config)*
 
-### \`kirograph_architecture\` — **start here for architectural questions**
+### \`kirograph_architecture\`: **start here for architectural questions**
 
 Returns the full package graph, detected layers (api/service/data/ui/shared), and their dependency edges.
 
@@ -182,9 +188,9 @@ kirograph_architecture(level: "layers")
 kirograph_architecture(includeFiles: true)  // add file→package assignments
 \`\`\`
 
-### \`kirograph_coupling\` — stability metrics per package
+### \`kirograph_coupling\`: stability metrics per package
 
-Returns Ca (afferent — depended on by), Ce (efferent — depends on), and instability (Ce/(Ca+Ce)).
+Returns Ca (afferent: depended on by), Ce (efferent: depends on), and instability (Ce/(Ca+Ce)).
 - High Ca + low instability = load-bearing, safe to depend on, risky to change interface.
 - High Ce + high instability = depends on many things, safe to refactor internals.
 
@@ -194,7 +200,7 @@ kirograph_coupling(sortBy: "afferent")     // most depended-on first
 kirograph_coupling(sortBy: "efferent")     // most outgoing deps first
 \`\`\`
 
-### \`kirograph_package\` — drill into one package
+### \`kirograph_package\`: drill into one package
 
 Returns metadata, coupling metrics, outgoing deps, incoming dependents, and file list.
 
@@ -208,27 +214,27 @@ kirograph_package(package: "src/services", includeFiles: false)
 ## Workflows
 
 **Bug fix or feature:**
-1. \`kirograph_context\` — orient, find entry points.
-2. \`kirograph_node\` with \`includeCode: true\` — read the relevant symbol.
-3. \`kirograph_callers\` / \`kirograph_callees\` — trace the call flow.
-4. \`kirograph_impact\` — check blast radius before editing.
+1. \`kirograph_context\`: orient, find entry points.
+2. \`kirograph_node\` with \`includeCode: true\`: read the relevant symbol.
+3. \`kirograph_callers\` / \`kirograph_callees\`: trace the call flow.
+4. \`kirograph_impact\`: check blast radius before editing.
 
 **Refactor planning:**
-1. \`kirograph_hotspots\` — identify the most-connected symbols; changing these is risky.
-2. \`kirograph_surprising\` — surface hidden coupling that will break.
-3. \`kirograph_impact\` on specific targets — confirm blast radius.
-4. \`kirograph_diff\` after the refactor — verify the structural change matches intent.
+1. \`kirograph_hotspots\`: identify the most-connected symbols; changing these is risky.
+2. \`kirograph_surprising\`: surface hidden coupling that will break.
+3. \`kirograph_impact\` on specific targets: confirm blast radius.
+4. \`kirograph_diff\` after the refactor: verify the structural change matches intent.
 
 **Architectural review:**
-1. \`kirograph_architecture\` — get the package and layer map.
-2. \`kirograph_coupling\` — find the most stable (high Ca) and most volatile (high instability) packages.
-3. \`kirograph_package\` — drill into any package of interest.
-4. \`kirograph_circular_deps\` — check for import cycles.
+1. \`kirograph_architecture\`: get the package and layer map.
+2. \`kirograph_coupling\`: find the most stable (high Ca) and most volatile (high instability) packages.
+3. \`kirograph_package\`: drill into any package of interest.
+4. \`kirograph_circular_deps\`: check for import cycles.
 
 **Code cleanup:**
-1. \`kirograph_dead_code\` — find unreferenced unexported symbols.
-2. \`kirograph_circular_deps\` — find import cycles to untangle.
-3. \`kirograph_surprising\` — find unexpected coupling to decouple.
+1. \`kirograph_dead_code\`: find unreferenced unexported symbols.
+2. \`kirograph_circular_deps\`: find import cycles to untangle.
+3. \`kirograph_surprising\`: find unexpected coupling to decouple.
 
 ---
 
@@ -237,16 +243,191 @@ kirograph_package(package: "src/services", includeFiles: false)
 Ask the user: "This project doesn't have KiroGraph initialized. Run \`kirograph init -i\` to build a code knowledge graph for faster exploration?"
 `;
 
-function buildSteeringContent(cavemanMode?: CavemanMode | 'off'): string {
-  const caveman = cavemanMode && cavemanMode !== 'off' ? CAVEMAN_RULES[cavemanMode] : null;
-  if (!caveman) return STEERING_CONTENT;
-  return STEERING_CONTENT.trimEnd() + '\n\n' + caveman + '\n';
+// ── Compression section builder (level-aware) ─────────────────────────────────
+
+const LEVEL_DESCRIPTIONS: Record<string, string> = {
+  normal: 'Balanced: removes noise, keeps structure.',
+  aggressive: 'Compact: groups by category, limits output.',
+  ultra: 'Maximum compression: counts and summaries only.',
+};
+
+const LEVEL_EXAMPLES: Record<string, string> = {
+  normal: `\\\`\\\`\\\`
+kirograph_exec(command: "git status")
+kirograph_exec(command: "npm test")
+kirograph_exec(command: "cargo build")
+kirograph_exec(command: "ls -la src/")
+\\\`\\\`\\\``,
+  aggressive: `\\\`\\\`\\\`
+kirograph_exec(command: "git status", level: "aggressive")
+kirograph_exec(command: "npm test", level: "aggressive")
+kirograph_exec(command: "eslint .", level: "aggressive")
+kirograph_exec(command: "find . -name '*.ts'", level: "aggressive")
+\\\`\\\`\\\``,
+  ultra: `\\\`\\\`\\\`
+kirograph_exec(command: "git status", level: "ultra")
+kirograph_exec(command: "npm test", level: "ultra")
+kirograph_exec(command: "docker ps", level: "ultra")
+kirograph_exec(command: "ls -la src/", level: "ultra")
+\\\`\\\`\\\``,
+};
+
+function buildCompressionSection(level: 'normal' | 'aggressive' | 'ultra'): string {
+  return `
+---
+
+## Shell Compression (\\\`kirograph_exec\\\`)
+
+When running shell commands, prefer \\\`kirograph_exec\\\` over raw shell execution for:
+- **git** operations (status, log, diff, push, pull, commit, add, fetch, branch)
+- **GitHub CLI** (gh pr list/view, gh issue list, gh run list)
+- **test runners** (jest, vitest, pytest, cargo test, go test, rspec, minitest, playwright)
+- **linters/build** (eslint, tsc, ruff, clippy, cargo build, prettier, biome, golangci-lint, rubocop, next build)
+- **file listings** (ls, find, tree)
+- **search** (grep, rg/ripgrep: grouped by file)
+- **diff** (diff file1 file2: condensed context)
+- **docker/k8s** (docker ps, images, logs, compose ps, kubectl pods, logs, services)
+- **package managers** (npm/pnpm install/list, pip list/install, bundle install, prisma generate)
+- **AWS CLI** (sts, ec2, lambda, logs, cloudformation, dynamodb, iam, s3, ecs, sqs, sns)
+- **network** (curl, wget: strip progress bars and headers)
+
+This saves 60-90% of tokens compared to raw output.
+
+Compression level: **${level}**: ${LEVEL_DESCRIPTIONS[level]}
+
+${LEVEL_EXAMPLES[level]}
+
+**Important:** Error details are always preserved. Failed commands show full diagnostic output regardless of level.
+
+**Do NOT re-run commands:** When \\\`kirograph_exec\\\` returns a result, treat it as the final answer. Never re-run the same command with raw shell execution to "get more details." The compressed output preserves all essential information. If you genuinely need something missing from the output, explain what's missing before making a second call.
+
+Use \\\`kirograph_gain\\\` to check token savings statistics.`;
 }
 
-export function writeSteering(kiroDir: string, cavemanMode?: CavemanMode | 'off'): void {
+export interface SteeringOptions {
+  cavemanMode?: CavemanMode | 'off';
+  enableCompression?: boolean;
+  shellCompressionLevel?: 'off' | 'normal' | 'aggressive' | 'ultra';
+  enableMemory?: boolean;
+  enableDocs?: boolean;
+  enableData?: boolean;
+}
+
+function buildSteeringContent(opts?: SteeringOptions): string {
+  const cavemanMode = opts?.cavemanMode;
+  const enableCompression = opts?.enableCompression !== false && opts?.shellCompressionLevel !== 'off';
+  const shellCompressionLevel = opts?.shellCompressionLevel ?? 'normal';
+
+  let content = STEERING_CONTENT;
+
+  // Insert compression section before the "If .kirograph/ does NOT exist" section
+  if (enableCompression && shellCompressionLevel !== 'off') {
+    const section = buildCompressionSection(shellCompressionLevel as 'normal' | 'aggressive' | 'ultra');
+    content = content.replace(
+      '---\n\n## If `.kirograph/` does NOT exist',
+      section.trim() + '\n\n---\n\n## If `.kirograph/` does NOT exist',
+    );
+  }
+
+  // Remove compression tools from decision guide if disabled
+  if (!enableCompression) {
+    content = content.replace('| Run a command with token savings | `kirograph_exec` |\n', '');
+    content = content.replace('| Check token savings stats | `kirograph_gain` |\n', '');
+  }
+
+  const caveman = cavemanMode && cavemanMode !== 'off' ? CAVEMAN_RULES[cavemanMode] : null;
+  if (caveman) {
+    content = content.trimEnd() + '\n\n' + caveman + '\n';
+  }
+
+  // Memory section
+  if (opts?.enableMemory) {
+    const memorySection = `
+## Memory
+
+KiroGraph has persistent memory. Use \`kirograph_mem_search\` to recall past decisions,
+errors, and patterns before making changes. Use \`kirograph_mem_store\` to save important
+observations (architecture decisions, bug root causes, patterns discovered).
+
+Memory is searchable via hybrid FTS + vector search. Observations are automatically
+linked to code symbols in the graph and surface in \`kirograph_context\` and
+\`kirograph_impact\` results when relevant.
+
+**When to store:** After fixing a bug, making an architecture decision, discovering a pattern,
+encountering a non-obvious error, or learning something about the codebase that future sessions
+should know. Keep observations concise — one fact per store call. A hook will also remind you
+at session end.
+`;
+    content = content.trimEnd() + '\n\n' + memorySection.trim() + '\n';
+  }
+
+  // Documentation section
+  if (opts?.enableDocs) {
+    const docsSection = `
+## Documentation
+
+KiroGraph indexes project documentation by heading structure. Use \`kirograph_docs_search\`
+to find relevant doc sections instead of reading entire files. Use \`kirograph_docs_section\`
+to retrieve the exact section you need by ID.
+
+**Available tools:**
+- \`kirograph_docs_toc\` — table of contents for a file or the whole project
+- \`kirograph_docs_search\` — search sections by query (independent from code search)
+- \`kirograph_docs_section\` — retrieve full content of a section by ID
+- \`kirograph_docs_outline\` — heading hierarchy for a single document
+- \`kirograph_docs_refs\` — find code symbols referenced by a doc section (or vice versa)
+
+**When to use:** Before reading a documentation file directly, check if \`kirograph_docs_search\`
+or \`kirograph_docs_outline\` can give you the specific section you need. This saves tokens
+and gives you structured navigation instead of raw file content.
+`;
+    content = content.trimEnd() + '\n\n' + docsSection.trim() + '\n';
+  }
+
+  // Data section
+  if (opts?.enableData) {
+    const dataSection = `
+## Data
+
+KiroGraph indexes tabular data files (CSV, TSV, JSONL, JSON, Excel, Parquet) for structured
+querying. Use \`kirograph_data_describe\` to understand a dataset's schema without loading
+the file. Use \`kirograph_data_query\` with filters to retrieve specific rows.
+
+**Available tools:**
+- \`kirograph_data_list\` — list all indexed datasets with row/column counts
+- \`kirograph_data_describe\` — full schema profile: column names, types, cardinality, null%, samples
+- \`kirograph_data_query\` — filtered row retrieval with structured operators (eq, gt, contains, in, between)
+- \`kirograph_data_aggregate\` — server-side GROUP BY: count, sum, avg, min, max, count_distinct
+- \`kirograph_data_search\` — search column names and sample values by keyword
+
+**When to use:** Instead of reading a CSV/data file directly (which floods context with raw rows),
+use \`kirograph_data_describe\` to understand the schema, then \`kirograph_data_query\` with
+filters to get only the rows you need. For summary statistics, use \`kirograph_data_aggregate\`
+to compute results server-side. This saves 95-99% of tokens compared to reading raw data files.
+
+\`\`\`
+kirograph_data_list()
+kirograph_data_describe(dataset: "tests-fixtures-users")
+kirograph_data_query(dataset: "tests-fixtures-users", filters: [{column: "role", op: "eq", value: "admin"}])
+kirograph_data_aggregate(dataset: "data-orders", groupBy: ["region"], metrics: [{column: "amount", op: "sum"}])
+\`\`\`
+`;
+    content = content.trimEnd() + '\n\n' + dataSection.trim() + '\n';
+  }
+
+  return content;
+}
+
+export function writeSteering(kiroDir: string, opts?: SteeringOptions | CavemanMode | 'off'): void {
   const steeringDir = path.join(kiroDir, 'steering');
   fs.mkdirSync(steeringDir, { recursive: true });
   const steeringPath = path.join(steeringDir, 'kirograph.md');
-  fs.writeFileSync(steeringPath, buildSteeringContent(cavemanMode));
+
+  // Support both old signature (cavemanMode string) and new signature (options object)
+  const resolvedOpts: SteeringOptions = typeof opts === 'string'
+    ? { cavemanMode: opts }
+    : opts ?? {};
+
+  fs.writeFileSync(steeringPath, buildSteeringContent(resolvedOpts));
   console.log(`  ✓ Steering file written to ${steeringPath}`);
 }

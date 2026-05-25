@@ -10,6 +10,8 @@ import { loadConfig, updateConfig } from '../../config';
 import { CAVEMAN_RULES, CavemanMode } from '../installer/caveman';
 import { writeSteering } from '../installer/steering';
 import { writeCliAgent } from '../installer/cli-agent';
+import { upsertGeneratedBlock } from '../installer/common';
+import { buildAgentInstructions } from '../installer/instructions';
 import { bold, dim, green, reset, violet } from '../ui';
 
 const JOKES = [
@@ -85,7 +87,12 @@ export function register(program: Command): void {
       // Regenerate steering file if .kiro/steering/kirograph.md exists
       const steeringPath = path.join(kiroDir, 'steering', 'kirograph.md');
       if (fs.existsSync(steeringPath)) {
-        writeSteering(kiroDir, normalized as CavemanMode | 'off');
+        const config = await loadConfig(cwd);
+        writeSteering(kiroDir, {
+          cavemanMode: normalized as CavemanMode | 'off',
+          enableCompression: config.shellCompressionLevel !== 'off',
+          shellCompressionLevel: config.shellCompressionLevel,
+        });
       }
 
       // Regenerate CLI agent config if .kiro/agents/kirograph.json exists
@@ -94,9 +101,20 @@ export function register(program: Command): void {
         writeCliAgent(kiroDir);
       }
 
+      for (const file of ['claude.md', 'codex.md']) {
+        const instructionsPath = path.join(cwd, '.kirograph', file);
+        if (fs.existsSync(instructionsPath)) {
+          fs.writeFileSync(instructionsPath, buildAgentInstructions(normalized as CavemanMode | 'off'));
+        }
+      }
+      const agentsPath = path.join(cwd, 'AGENTS.md');
+      if (fs.existsSync(agentsPath) && fs.readFileSync(agentsPath, 'utf8').includes('<!-- kirograph:codex:start -->')) {
+        upsertGeneratedBlock(agentsPath, 'codex', '## KiroGraph', buildAgentInstructions(normalized as CavemanMode | 'off'));
+      }
+
       console.log();
       if (normalized === 'off') {
-        console.log(`  ${green}✓${reset} Caveman mode ${violet}${bold}off${reset}${dim} — agent will respond normally from next session.${reset}`);
+        console.log(`  ${green}✓${reset} Caveman mode ${violet}${bold}off${reset}${dim} . Agent will respond normally from next session.${reset}`);
         console.log(joke());
       } else {
         console.log(`  ${green}✓${reset} Caveman mode set to ${violet}${bold}${normalized}${reset}`);

@@ -14,8 +14,9 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { GraphDatabase } from '../db/database';
-import { scanDirectory, hashContent, getChangedFiles } from '../sync/index';
+import { scanDirectory, hashContent, getChangedFiles, shouldIncludeFile } from '../sync/index';
 import { extractFile } from '../extraction/extractor';
+import { clearParserCache, initGrammars, hasWasmGrammar } from '../extraction/grammars';
 import { detectFrameworks } from '../frameworks/index';
 import { ReferenceResolver } from '../resolution/index';
 import { VectorManager } from '../vectors/index';
@@ -53,6 +54,11 @@ export class IndexPipeline {
     let nodesCreated = 0;
     let edgesCreated = 0;
 
+    // Track languages whose WASM parser is currently poisoned (ABORT=true on the module).
+    // Once a language's parser aborts, every subsequent parse call for that language
+    // fails instantly. We skip those files until clearParserCache + initGrammars succeeds.
+    const poisonedLanguages = new Set<string>();
+
     try {
       const files = await scanDirectory(this.projectRoot, this.config, opts?.signal);
       opts?.onProgress?.({ phase: 'scanning', current: files.length, total: files.length });
@@ -83,6 +89,11 @@ export class IndexPipeline {
             if (existing && hashContent(content) === existing.contentHash) continue;
           }
 
+          // Skip files whose language parser is currently poisoned
+          const { detectLanguage } = await import('../extraction/languages');
+          const lang = detectLanguage(file);
+          if (poisonedLanguages.has(lang)) continue;
+
           const extracted = await extractFile(file, this.projectRoot, content);
           if (!extracted) continue;
 
@@ -109,7 +120,71 @@ export class IndexPipeline {
 
           filesIndexed++;
         } catch (err) {
-          errors.push(`${file}: ${err instanceof Error ? err.message : String(err)}`);
+          const msg = err instanceof Error ? err.message : String(err);
+          errors.push(`${file}: ${msg}`);
+
+          // Detect WASM runtime abort and attempt recovery
+          const isWasmCrash = (err as any)?.constructor?.name === 'RuntimeError'
+            || msg.includes('Aborted(') 
+            || msg.includes('RuntimeError')
+            || msg.includes('WASM grammar exists but failed to load');
+          if (isWasmCrash) {
+            // Mark the language as poisoned so we skip remaining files of this language
+            const { detectLanguage } = await import('../extraction/languages');
+            const lang = detectLanguage(file);
+            poisonedLanguages.add(lang);
+
+            clearParserCache();
+            try {
+              await initGrammars();
+              // Recovery succeeded — un-poison all languages
+              poisonedLanguages.clear();
+            } catch {
+              errors.push('WASM runtime unrecoverable after crash — aborting batch');
+              break;
+            }
+          }
+        }
+      }
+
+      // Re-process files that have symbolCount=0 but should have symbols (WASM recovery)
+      const emptyFiles = this.db.getAllFiles().filter(
+        (f: any) => f.symbolCount === 0 && hasWasmGrammar(f.language)
+      );
+      if (emptyFiles.length > 0) {
+        opts?.onProgress?.({ phase: 'retrying', current: 0, total: emptyFiles.length });
+        for (let i = 0; i < emptyFiles.length; i++) {
+          const ef = emptyFiles[i];
+          const absPath = path.join(this.projectRoot, ef.path);
+          opts?.onProgress?.({ phase: 'retrying', current: i + 1, total: emptyFiles.length, currentFile: absPath });
+          try {
+            const extracted = await extractFile(absPath, this.projectRoot);
+            if (!extracted || extracted.nodes.length === 0) continue;
+
+            const oldNodes = this.db.getNodesByFile(extracted.filePath);
+            if (oldNodes.length > 0) await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
+
+            this.db.transaction(() => {
+              this.db.deleteNodesByFile(extracted.filePath);
+              this.db.deleteUnresolvedRefsByFile(extracted.filePath);
+              this.db.upsertFile({
+                path: extracted.filePath,
+                contentHash: extracted.contentHash,
+                language: extracted.language,
+                fileSize: extracted.fileSize,
+                symbolCount: extracted.nodes.length,
+                indexedAt: Date.now(),
+              });
+              for (const node of extracted.nodes) { this.db.upsertNode(node); nodesCreated++; }
+              for (const edge of extracted.edges) { this.db.insertEdge(edge); edgesCreated++; }
+              for (const ref of extracted.unresolvedRefs) {
+                this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column);
+              }
+            });
+            filesIndexed++;
+          } catch {
+            // Already logged in first pass or genuinely broken — skip
+          }
         }
       }
 
@@ -145,6 +220,49 @@ export class IndexPipeline {
         opts?.onProgress?.({ phase: 'architecture', current: 1, total: 1 });
       }
 
+      // Index documentation (if enabled)
+      if (this.config.enableDocs) {
+        try {
+          const { DocsIndexer } = await import('../docs/indexer');
+          this.db.applyDocsSchema();
+          const docsIndexer = new DocsIndexer(this.db.getRawDb(), this.config, this.projectRoot);
+          await docsIndexer.indexAll({
+            force: opts?.force,
+            onProgress: msg => opts?.onProgress?.({ phase: 'docs', current: 0, total: 1, meta: { msg } }),
+          });
+        } catch { /* docs indexing is non-critical */ }
+      }
+
+      // Index data files (if enabled)
+      if ((this.config as any).enableData) {
+        try {
+          const { DataIndexer } = await import('../data/indexer');
+          this.db.applyDataSchema();
+          const dataIndexer = new DataIndexer(this.db.getRawDb(), this.config, this.projectRoot);
+          await dataIndexer.indexAll({
+            onProgress: msg => opts?.onProgress?.({ phase: 'data', current: 0, total: 1, meta: { msg } }),
+          });
+
+          // Assign data files to 'data' architecture layer if architecture is enabled
+          if (this.config.enableArchitecture) {
+            try {
+              const rawDb = this.db.getRawDb();
+              // Check if arch_file_layers table exists
+              const tableExists = rawDb.get("SELECT name FROM sqlite_master WHERE type='table' AND name='arch_file_layers'");
+              if (tableExists) {
+                const datasets = rawDb.all('SELECT file_path FROM data_datasets') as Array<{ file_path: string }>;
+                for (const ds of datasets) {
+                  rawDb.run(
+                    `INSERT OR REPLACE INTO arch_file_layers (file_path, layer_id, confidence) VALUES (?, ?, ?)`,
+                    [ds.file_path, 'layer:data', 1.0],
+                  );
+                }
+              }
+            } catch { /* non-critical */ }
+          }
+        } catch { /* data indexing is non-critical */ }
+      }
+
       this.lock.clearDirty();
       return { success: errors.length === 0, filesIndexed, nodesCreated, edgesCreated, errors, duration: Date.now() - start };
     } finally {
@@ -153,24 +271,50 @@ export class IndexPipeline {
     }
   }
 
-  async sync(changedFiles?: string[]): Promise<SyncResult> {
+  async sync(opts?: {
+    changedFiles?: string[];
+    onProgress?: (p: IndexProgress) => void;
+  }): Promise<SyncResult> {
     const release = await this.mutex.acquire();
     this.lock.acquire();
     const start = Date.now();
+    const changedFiles = opts?.changedFiles;
+    const onProgress = opts?.onProgress;
     const result: SyncResult = {
       added: [], modified: [], removed: [],
-      nodesCreated: 0, nodesRemoved: 0, errors: [], duration: 0,
+      nodesCreated: 0, nodesUpdated: 0, nodesRemoved: 0,
+      edgesCreated: 0, edgesRemoved: 0,
+      filesScanned: 0, errors: [], duration: 0,
     };
 
     try {
       const removeFile = async (rel: string) => {
-        await this.vectors.deleteEmbeddings(this.db.getNodesByFile(rel).map(n => n.id));
+        const oldNodes = this.db.getNodesByFile(rel);
+        const oldEdgeCount = this.db.getEdgesForNodes(oldNodes.map(n => n.id)).length;
+        result.nodesRemoved += oldNodes.length;
+        result.edgesRemoved += oldEdgeCount;
+        await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
         this.db.deleteFile(rel);
         this.db.deleteUnresolvedRefsByFile(rel);
         result.removed.push(rel);
       };
 
+      // ── Exclude-rule cleanup ──────────────────────────────────────────────
+      // Remove any indexed files that now match the current exclude patterns.
+      // This handles the case where a user adds a new exclude pattern (e.g.
+      // "**/.vite/**") and expects those files to disappear from the index on
+      // the next sync without needing a full --force re-index.
+      const allIndexed = this.db.getAllFiles();
+      for (const f of allIndexed) {
+        if (!shouldIncludeFile(f.path, this.config)) {
+          onProgress?.({ phase: 'scanning', current: 0, total: 0, meta: { excludeCleanup: true, file: f.path } });
+          await removeFile(f.path);
+        }
+      }
+
       let filesToProcess: string[];
+
+      onProgress?.({ phase: 'scanning', current: 0, total: 0 });
 
       if (changedFiles) {
         filesToProcess = changedFiles.map(f => path.resolve(this.projectRoot, f));
@@ -190,6 +334,7 @@ export class IndexPipeline {
             (await scanDirectory(this.projectRoot, this.config))
               .map(f => path.relative(this.projectRoot, f).replace(/\\/g, '/'))
           );
+          result.filesScanned = current.size;
           for (const p of indexed) {
             if (!current.has(p)) await removeFile(p);
           }
@@ -197,7 +342,15 @@ export class IndexPipeline {
         }
       }
 
-      for (const file of filesToProcess) {
+      result.filesScanned = result.filesScanned || filesToProcess.length;
+      onProgress?.({ phase: 'scanning', current: result.filesScanned, total: result.filesScanned });
+
+      const poisonedLanguages = new Set<string>();
+
+      for (let i = 0; i < filesToProcess.length; i++) {
+        const file = filesToProcess[i];
+        onProgress?.({ phase: 'parsing', current: i + 1, total: filesToProcess.length, currentFile: file });
+
         if (!fs.existsSync(file)) {
           const rel = path.relative(this.projectRoot, file).replace(/\\/g, '/');
           await removeFile(rel);
@@ -205,6 +358,11 @@ export class IndexPipeline {
         }
 
         try {
+          // Skip files whose language parser is currently poisoned
+          const { detectLanguage } = await import('../extraction/languages');
+          const lang = detectLanguage(file);
+          if (poisonedLanguages.has(lang)) continue;
+
           const extracted = await extractFile(file, this.projectRoot);
           if (!extracted) continue;
 
@@ -213,10 +371,12 @@ export class IndexPipeline {
           if (!isNew && existing!.contentHash === extracted.contentHash) continue;
 
           const oldNodes = this.db.getNodesByFile(extracted.filePath);
+          const oldEdgeCount = this.db.getEdgesForNodes(oldNodes.map(n => n.id)).length;
           await this.vectors.deleteEmbeddings(oldNodes.map(n => n.id));
 
           this.db.transaction(() => {
             result.nodesRemoved += oldNodes.length;
+            result.edgesRemoved += oldEdgeCount;
             this.db.deleteNodesByFile(extracted.filePath);
             this.db.deleteUnresolvedRefsByFile(extracted.filePath);
             this.db.upsertFile({
@@ -228,7 +388,7 @@ export class IndexPipeline {
               indexedAt: Date.now(),
             });
             for (const node of extracted.nodes) { this.db.upsertNode(node); result.nodesCreated++; }
-            for (const edge of extracted.edges) { this.db.insertEdge(edge); }
+            for (const edge of extracted.edges) { this.db.insertEdge(edge); result.edgesCreated++; }
             for (const ref of extracted.unresolvedRefs) {
               this.db.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, extracted.filePath, ref.line, ref.column);
             }
@@ -236,17 +396,98 @@ export class IndexPipeline {
 
           this.resolver.invalidateFile(extracted.filePath);
           if (isNew) result.added.push(extracted.filePath);
-          else result.modified.push(extracted.filePath);
+          else { result.modified.push(extracted.filePath); result.nodesUpdated += extracted.nodes.length; }
         } catch (err) {
-          result.errors.push(`${file}: ${err instanceof Error ? err.message : String(err)}`);
+          const msg = err instanceof Error ? err.message : String(err);
+          result.errors.push(`${file}: ${msg}`);
+
+          // Detect WASM runtime abort and attempt recovery
+          const isWasmCrash = (err as any)?.constructor?.name === 'RuntimeError'
+            || msg.includes('Aborted(') 
+            || msg.includes('RuntimeError')
+            || msg.includes('WASM grammar exists but failed to load');
+          if (isWasmCrash) {
+            const { detectLanguage } = await import('../extraction/languages');
+            const lang = detectLanguage(file);
+            poisonedLanguages.add(lang);
+
+            clearParserCache();
+            try {
+              await initGrammars();
+              poisonedLanguages.clear();
+            } catch {
+              result.errors.push('WASM runtime unrecoverable after crash — aborting sync');
+              break;
+            }
+          }
         }
       }
 
-      await this.resolver.resolveAll();
+      // Resolve cross-file references
+      onProgress?.({ phase: 'resolving', current: 0, total: 1 });
+      await this.resolver.resolveAll((current, total) => {
+        onProgress?.({ phase: 'resolving', current, total });
+      });
+
       await detectFrameworks(this.projectRoot);
 
-      if (this.vectors.isInitialized()) await this.vectors.embedAll();
-      if (this.config.enableArchitecture) await this.arch.analyze();
+      // Generate embeddings (if enabled)
+      if (this.vectors.isInitialized()) {
+        onProgress?.({ phase: 'embeddings', current: 0, total: 1 });
+        await this.vectors.embedAll((current, total) =>
+          onProgress?.({ phase: 'embeddings', current, total })
+        );
+      }
+
+      // Analyze architecture (if enabled)
+      if (this.config.enableArchitecture) {
+        onProgress?.({ phase: 'architecture', current: 0, total: 1 });
+        await this.arch.analyze(msg =>
+          onProgress?.({ phase: 'architecture', current: 0, total: 1, meta: { msg } })
+        );
+        onProgress?.({ phase: 'architecture', current: 1, total: 1 });
+      }
+
+      // Re-index documentation (if enabled)
+      if (this.config.enableDocs) {
+        try {
+          const { DocsIndexer } = await import('../docs/indexer');
+          this.db.applyDocsSchema();
+          const docsIndexer = new DocsIndexer(this.db.getRawDb(), this.config, this.projectRoot);
+          await docsIndexer.indexAll({
+            onProgress: msg => onProgress?.({ phase: 'docs', current: 0, total: 1, meta: { msg } }),
+          });
+        } catch { /* docs indexing is non-critical */ }
+      }
+
+      // Re-index data files (if enabled)
+      if ((this.config as any).enableData) {
+        try {
+          const { DataIndexer } = await import('../data/indexer');
+          this.db.applyDataSchema();
+          const dataIndexer = new DataIndexer(this.db.getRawDb(), this.config, this.projectRoot);
+          await dataIndexer.indexAll({
+            onProgress: msg => onProgress?.({ phase: 'data', current: 0, total: 1, meta: { msg } }),
+          });
+
+          // Assign data files to 'data' architecture layer if architecture is enabled
+          if (this.config.enableArchitecture) {
+            try {
+              const rawDb = this.db.getRawDb();
+              const tableExists = rawDb.get("SELECT name FROM sqlite_master WHERE type='table' AND name='arch_file_layers'");
+              if (tableExists) {
+                const datasets = rawDb.all('SELECT file_path FROM data_datasets') as Array<{ file_path: string }>;
+                for (const ds of datasets) {
+                  rawDb.run(
+                    `INSERT OR REPLACE INTO arch_file_layers (file_path, layer_id, confidence) VALUES (?, ?, ?)`,
+                    [ds.file_path, 'layer:data', 1.0],
+                  );
+                }
+              }
+            } catch { /* non-critical */ }
+          }
+        } catch { /* data indexing is non-critical */ }
+      }
 
       this.lock.clearDirty();
       result.duration = Date.now() - start;

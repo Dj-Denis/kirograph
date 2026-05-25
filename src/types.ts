@@ -15,7 +15,10 @@ export type EdgeKind =
 export type Language =
   | 'typescript' | 'javascript' | 'tsx' | 'jsx' | 'python' | 'go' | 'rust'
   | 'java' | 'c' | 'cpp' | 'csharp' | 'php' | 'ruby' | 'swift' | 'kotlin'
-  | 'dart' | 'svelte' | 'pascal' | 'liquid' | 'unknown';
+  | 'dart' | 'svelte' | 'pascal' | 'liquid' | 'elixir'
+  | 'scala' | 'lua' | 'zig' | 'bash' | 'ocaml' | 'elm' | 'solidity' | 'vue' | 'objc'
+  | 'yaml' | 'hcl' | 'css' | 'scss' | 'html'
+  | 'unknown';
 
 export interface Node {
   id: string;
@@ -123,7 +126,7 @@ export interface TaskContext {
 }
 
 export interface IndexProgress {
-  phase: 'scanning' | 'parsing' | 'storing' | 'resolving' | 'detecting frameworks' | 'embeddings' | 'architecture';
+  phase: 'scanning' | 'parsing' | 'storing' | 'resolving' | 'detecting frameworks' | 'embeddings' | 'architecture' | 'docs' | 'data' | 'retrying';
   current: number;
   total: number;
   currentFile?: string;
@@ -144,7 +147,11 @@ export interface SyncResult {
   modified: string[];
   removed: string[];
   nodesCreated: number;
+  nodesUpdated: number;
   nodesRemoved: number;
+  edgesCreated: number;
+  edgesRemoved: number;
+  filesScanned: number;
   errors: string[];
   duration: number;
 }

@@ -8,52 +8,43 @@ import { logWarn } from '../../errors';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const FILE_PATTERNS = [
-  '**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx',
-  '**/*.py', '**/*.go', '**/*.rs', '**/*.java',
-  '**/*.cs', '**/*.rb', '**/*.php', '**/*.swift',
-  '**/*.kt', '**/*.dart',
-];
+const HOOK_EXT = '.kiro.hook';
 
 const HOOKS: Array<{ filename: string; hook: object }> = [
   {
-    filename: 'kirograph-mark-dirty-on-save.json',
+    filename: `kirograph-sync-if-dirty${HOOK_EXT}`,
     hook: {
-      name: 'KiroGraph Mark Dirty on Save',
+      name: 'KiroGraph Sync on Agent Stop',
       version: '1.0.0',
-      description: 'Mark the KiroGraph index as dirty when source files are saved. Sync is deferred to agent idle.',
-      when: { type: 'fileEdited', patterns: FILE_PATTERNS },
-      then: { type: 'runCommand', command: 'kirograph mark-dirty 2>/dev/null || true' },
-    },
-  },
-  {
-    filename: 'kirograph-mark-dirty-on-create.json',
-    hook: {
-      name: 'KiroGraph Mark Dirty on Create',
-      version: '1.0.0',
-      description: 'Mark the KiroGraph index as dirty when source files are created.',
-      when: { type: 'fileCreated', patterns: FILE_PATTERNS },
-      then: { type: 'runCommand', command: 'kirograph mark-dirty 2>/dev/null || true' },
-    },
-  },
-  {
-    filename: 'kirograph-sync-on-delete.json',
-    hook: {
-      name: 'KiroGraph Sync on Delete',
-      version: '1.0.0',
-      description: 'Remove deleted files from the KiroGraph index immediately.',
-      when: { type: 'fileDeleted', patterns: FILE_PATTERNS },
-      then: { type: 'runCommand', command: 'kirograph sync-if-dirty 2>/dev/null || true' },
-    },
-  },
-  {
-    filename: 'kirograph-sync-if-dirty.json',
-    hook: {
-      name: 'KiroGraph Deferred Sync',
-      version: '1.0.0',
-      description: 'Sync the KiroGraph index when the agent is idle and a dirty marker is present. Batches multiple rapid saves into one sync.',
+      description: 'Sync the KiroGraph index when the agent stops, picking up any file edits, creates, or deletes from the session.',
       when: { type: 'agentStop' },
-      then: { type: 'runCommand', command: 'kirograph sync-if-dirty --quiet 2>/dev/null || true' },
+      then: { type: 'runCommand', command: 'kirograph sync --quiet 2>&1 > /dev/null' },
+    },
+  },
+  {
+    filename: `kirograph-compress-hint${HOOK_EXT}`,
+    hook: {
+      name: 'KiroGraph Compression Hint',
+      version: '1.0.0',
+      description: 'Remind the agent to use kirograph_exec for shell commands that benefit from token compression (git, gh, test, lint, build, docker, aws, grep).',
+      when: { type: 'preToolUse', toolTypes: ['shell'] },
+      then: {
+        type: 'askAgent',
+        prompt: 'If this shell command is a git operation, GitHub CLI, test runner, linter, build tool, file listing, grep/rg, docker/kubectl, AWS CLI, or package manager command, consider using the kirograph_exec MCP tool instead for 60-90% token savings. The tool compresses output automatically while preserving error details.',
+      },
+    },
+  },
+  {
+    filename: `kirograph-mem-capture${HOOK_EXT}`,
+    hook: {
+      name: 'KiroGraph Memory Capture',
+      version: '1.0.0',
+      description: 'Prompt the agent to store important observations in memory at the end of each session.',
+      when: { type: 'agentStop' },
+      then: {
+        type: 'askAgent',
+        prompt: 'Before ending, review what happened in this session. If there were any important decisions, bug root causes, architecture insights, error patterns, or lessons learned, store them using kirograph_mem_store with the appropriate kind (decision, error, pattern, architecture, note). Keep observations concise — one fact per observation. Skip if nothing noteworthy happened.',
+      },
     },
   },
 ];
@@ -72,7 +63,7 @@ function migrateOnIdleHooks(hooksDir: string): void {
   if (!fs.existsSync(hooksDir)) return;
   let files: string[];
   try {
-    files = fs.readdirSync(hooksDir).filter(f => f.endsWith('.json'));
+    files = fs.readdirSync(hooksDir).filter(f => f.endsWith('.json') || f.endsWith(HOOK_EXT));
   } catch {
     return;
   }
@@ -92,8 +83,22 @@ function migrateOnIdleHooks(hooksDir: string): void {
       logWarn(`KiroGraph installer: could not parse hook file ${filePath}`);
       continue;
     }
+    let changed = false;
     if (obj?.when?.type === 'onIdle') {
       obj.when.type = 'agentStop';
+      changed = true;
+    }
+    // Migrate .json → .kiro.hook extension
+    if (file.endsWith('.json') && file.startsWith('kirograph-')) {
+      const newName = file.replace(/\.json$/, HOOK_EXT);
+      const newPath = path.join(hooksDir, newName);
+      try {
+        fs.writeFileSync(newPath, JSON.stringify(obj, null, 2) + '\n');
+        fs.unlinkSync(filePath);
+      } catch {
+        logWarn(`KiroGraph installer: could not migrate hook file ${filePath} → ${newName}`);
+      }
+    } else if (changed) {
       try {
         fs.writeFileSync(filePath, JSON.stringify(obj, null, 2) + '\n');
       } catch {
@@ -105,19 +110,41 @@ function migrateOnIdleHooks(hooksDir: string): void {
 
 // ── Public ────────────────────────────────────────────────────────────────────
 
-export function writeHooks(kiroDir: string): void {
+export function writeHooks(kiroDir: string, opts?: { enableCompression?: boolean; enableMemory?: boolean }): void {
   const hooksDir = path.join(kiroDir, 'hooks');
   ensureDir(hooksDir);
 
   migrateOnIdleHooks(hooksDir);
 
-  const oldHooks = ['kirograph-sync-on-save.json', 'kirograph-sync-on-create.json'];
+  const oldHooks = [
+    'kirograph-sync-on-save.json', 'kirograph-sync-on-create.json',
+    // Legacy .json versions (migrated to .kiro.hook)
+    'kirograph-mark-dirty-on-save.json', 'kirograph-mark-dirty-on-create.json',
+    'kirograph-sync-on-delete.json', 'kirograph-sync-if-dirty.json',
+    'kirograph-compress-hint.json', 'kirograph-mem-capture.json',
+    // Removed per-file hooks (consolidated into agentStop sync)
+    `kirograph-mark-dirty-on-save${HOOK_EXT}`,
+    `kirograph-mark-dirty-on-create${HOOK_EXT}`,
+    `kirograph-sync-on-delete${HOOK_EXT}`,
+  ];
   for (const old of oldHooks) {
     const p = path.join(hooksDir, old);
     if (fs.existsSync(p)) fs.unlinkSync(p);
   }
 
   for (const { filename, hook } of HOOKS) {
+    // Skip compression hook if compression is disabled
+    if (filename === `kirograph-compress-hint${HOOK_EXT}` && opts?.enableCompression === false) {
+      const p = path.join(hooksDir, filename);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+      continue;
+    }
+    // Skip memory hook if memory is disabled
+    if (filename === `kirograph-mem-capture${HOOK_EXT}` && !opts?.enableMemory) {
+      const p = path.join(hooksDir, filename);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+      continue;
+    }
     writeJson(path.join(hooksDir, filename), hook);
   }
 

@@ -22,6 +22,20 @@ export class GraphDatabase {
     const dbDir = path.join(projectRoot, '.kirograph');
     fs.mkdirSync(dbDir, { recursive: true });
     const dbPath = path.join(dbDir, 'kirograph.db');
+
+    // ── Pre-flight lock check ─────────────────────────────────────────────────
+    // node-sqlite3-wasm calls process.abort() when the DB is locked, producing
+    // a cryptic "Aborted()" with no context. Detect the lock file early and
+    // throw a clean error instead so the global handler can surface it clearly.
+    const lockPath = path.join(dbDir, 'kirograph.db.lock');
+    if (fs.existsSync(lockPath)) {
+      throw new Error(
+        `Database is locked by another process (${lockPath} exists).\n` +
+        `Run: kirograph unlock\n` +
+        `Or delete the lock manually: ${lockPath}`
+      );
+    }
+
     this.db = new Database(dbPath);
     this.db.exec(`
       PRAGMA journal_mode=WAL;
@@ -40,6 +54,49 @@ export class GraphDatabase {
     const sql = fs.readFileSync(schemaPath, 'utf8');
     this.db.exec(sql);
     this.runMigrations();
+  }
+
+  /**
+   * Apply memory schema tables. Called when enableMemory is true.
+   * Safe to call multiple times (CREATE IF NOT EXISTS).
+   */
+  applyMemorySchema(): void {
+    const schemaPath = path.join(__dirname, '../db/memory-schema.sql');
+    if (fs.existsSync(schemaPath)) {
+      const sql = fs.readFileSync(schemaPath, 'utf8');
+      this.db.exec(sql);
+    }
+  }
+
+  /**
+   * Apply docs schema tables. Called when enableDocs is true.
+   * Safe to call multiple times (CREATE IF NOT EXISTS).
+   */
+  applyDocsSchema(): void {
+    const schemaPath = path.join(__dirname, '../db/docs-schema.sql');
+    if (fs.existsSync(schemaPath)) {
+      const sql = fs.readFileSync(schemaPath, 'utf8');
+      this.db.exec(sql);
+    }
+  }
+
+  /**
+   * Apply data schema tables. Called when enableData is true.
+   * Safe to call multiple times (CREATE IF NOT EXISTS).
+   */
+  applyDataSchema(): void {
+    const schemaPath = path.join(__dirname, '../db/data-schema.sql');
+    if (fs.existsSync(schemaPath)) {
+      const sql = fs.readFileSync(schemaPath, 'utf8');
+      this.db.exec(sql);
+    }
+  }
+
+  /**
+   * Get the raw database handle (for MemoryDatabase).
+   */
+  getRawDb(): any {
+    return this.db;
   }
 
   private runMigrations(): void {
@@ -688,6 +745,28 @@ export class GraphDatabase {
 
   getAllNodes(): import('../types').Node[] {
     return this.db.all('SELECT * FROM nodes').map(this.rowToNode);
+  }
+
+  /**
+   * Returns embeddable nodes in pages for memory-efficient streaming.
+   * `kinds` filters by node kind (e.g. ['function','method','class']).
+   * Returns an empty array when offset >= total count.
+   */
+  getEmbeddableNodesPaged(kinds: string[], limit: number, offset: number): import('../types').Node[] {
+    if (kinds.length === 0) return [];
+    const placeholders = kinds.map(() => '?').join(',');
+    return this.db.all(
+      `SELECT * FROM nodes WHERE kind IN (${placeholders}) LIMIT ? OFFSET ?`,
+      [...kinds, limit, offset]
+    ).map(this.rowToNode);
+  }
+
+  /** Count of nodes whose kind is in the provided list. */
+  countEmbeddableNodes(kinds: string[]): number {
+    if (kinds.length === 0) return 0;
+    const placeholders = kinds.map(() => '?').join(',');
+    const row = this.db.get(`SELECT COUNT(*) as c FROM nodes WHERE kind IN (${placeholders})`, kinds);
+    return row?.c ?? 0;
   }
 
   getAllEdges(): Edge[] {

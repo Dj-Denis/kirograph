@@ -32,6 +32,8 @@ export class ReferenceResolver {
   private kindCache: Map<NodeKind, Node[]> = new Map();
   private lowerNameCache: Map<string, Node[]> = new Map();
   private nodeByIdCache: Map<string, Node> = new Map();
+  // namespace prefix → first non-import node ID (for C#/Java namespace-level imports)
+  private namespacePrefixCache: Map<string, string> = new Map();
 
   private cacheWarmed = false;
 
@@ -50,6 +52,7 @@ export class ReferenceResolver {
     this.kindCache.clear();
     this.lowerNameCache.clear();
     this.nodeByIdCache.clear();
+    this.namespacePrefixCache.clear();
 
     // Access the underlying db instance to query all nodes
     const rawDb = (this.db as any).db;
@@ -81,6 +84,21 @@ export class ReferenceResolver {
 
       // nodeByIdCache
       this.nodeByIdCache.set(node.id, node);
+    }
+
+    // Build namespace prefix cache for C#/Java namespace-level import resolution.
+    // For each class/interface with a dotted qualifiedName, record every ancestor
+    // namespace prefix → the node ID, so "using MyApp.Services" resolves O(1).
+    for (const [qualName, node] of this.qualifiedNameCache) {
+      if (node.kind === 'class' || node.kind === 'interface' || node.kind === 'namespace' || node.kind === 'module') {
+        const parts = qualName.split('.');
+        for (let k = 1; k < parts.length; k++) {
+          const prefix = parts.slice(0, k).join('.');
+          if (!this.namespacePrefixCache.has(prefix)) {
+            this.namespacePrefixCache.set(prefix, node.id);
+          }
+        }
+      }
     }
 
     this.cacheWarmed = true;
@@ -128,104 +146,133 @@ export class ReferenceResolver {
     let resolved = 0;
     const total = refs.length;
 
-    for (let i = 0; i < refs.length; i++) {
-      const ref = refs[i];
-      onProgress?.(i + 1, total);
-      const {
-        id: refId,
-        source_id: sourceId,
-        ref_name: refName,
-        ref_kind: refKind,
-        file_path: filePath,
-        line,
-        column,
-      } = ref;
+    // Process in batched transactions to avoid WASM heap exhaustion.
+    // Without batching, each individual write allocates journal pages in the
+    // WASM linear memory, which can exceed the 2GB limit on large codebases.
+    const BATCH_SIZE = 1000;
 
-      const attemptedStrategies: string[] = [];
-      let targetId: string | null = null;
+    // Skip the expensive "scan all nodes" fuzzy fallback for very large graphs.
+    // The O(N*M) cost is prohibitive and the WASM heap cannot sustain it.
+    const FUZZY_ALL_NODES_LIMIT = 200_000;
+    const skipFullFuzzy = this.nodeByIdCache.size > FUZZY_ALL_NODES_LIMIT;
+    if (skipFullFuzzy) {
+      logDebug(`ReferenceResolver: skipping full-scan fuzzy (${this.nodeByIdCache.size} nodes exceeds ${FUZZY_ALL_NODES_LIMIT} limit)`);
+    }
 
-      if (refKind === 'import') {
-        // Strategy: import-path-based resolution (confidence 1.0)
-        attemptedStrategies.push('import-path');
-        targetId = this._resolveImportPath(refName, filePath);
-      } else {
-        // Strategy 1: Framework-specific (placeholder — not yet implemented)
-        attemptedStrategies.push('framework');
+    for (let batchStart = 0; batchStart < refs.length; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, refs.length);
 
-        // Strategy 2: Qualified name match (confidence 0.95)
-        attemptedStrategies.push('qualified');
-        const qualifiedNode = this.qualifiedNameCache.get(refName);
-        if (qualifiedNode) {
-          targetId = qualifiedNode.id;
-        }
+      // Wrap each batch in a transaction — dramatically reduces write amplification
+      rawDb.run('BEGIN');
+      try {
+        for (let i = batchStart; i < batchEnd; i++) {
+          const ref = refs[i];
+          onProgress?.(i + 1, total);
+          const {
+            id: refId,
+            source_id: sourceId,
+            ref_name: refName,
+            ref_kind: refKind,
+            file_path: filePath,
+            line,
+            column,
+          } = ref;
 
-        // Strategy 3: Method call pattern (confidence 0.85)
-        if (!targetId && refName.includes('.')) {
-          attemptedStrategies.push('method');
-          const methodPart = refName.slice(refName.lastIndexOf('.') + 1);
-          const methodCandidates = this.nameCache.get(methodPart) ?? [];
-          if (methodCandidates.length > 0) {
-            targetId = methodCandidates[0].id;
-          }
-        }
+          const attemptedStrategies: string[] = [];
+          let targetId: string | null = null;
 
-        // Strategy 4: Exact name match (confidence 0.9)
-        if (!targetId) {
-          attemptedStrategies.push('exact');
-          const exactCandidates = this.nameCache.get(refName) ?? [];
-          if (exactCandidates.length > 0) {
-            targetId = exactCandidates[0].id;
-          }
-        }
+          if (refKind === 'import') {
+            attemptedStrategies.push('import-path');
+            targetId = this._resolveImportPath(refName, filePath);
+          } else if (refKind === 'extends' || refKind === 'implements') {
+            attemptedStrategies.push('type-name');
+            targetId = this._resolveTypeName(refName);
+          } else {
+            attemptedStrategies.push('framework');
 
-        // Strategy 5: Fuzzy / lowercase match (confidence 0.5)
-        if (!targetId) {
-          attemptedStrategies.push('fuzzy');
-          const threshold = this.config.fuzzyResolutionThreshold ?? 0.5;
-          const lowerRef = refName.toLowerCase();
-          const fuzzyCandidates = this.lowerNameCache.get(lowerRef) ?? [];
+            // Strategy 2: Qualified name match (confidence 0.95)
+            attemptedStrategies.push('qualified');
+            const qualifiedNode = this.qualifiedNameCache.get(refName);
+            if (qualifiedNode) {
+              targetId = qualifiedNode.id;
+            }
 
-          if (fuzzyCandidates.length > 0) {
-            const match = matchReference(refName, fuzzyCandidates, threshold);
-            if (match) {
-              targetId = match.nodeId;
+            // Strategy 3: Method call pattern (confidence 0.85)
+            if (!targetId && refName.includes('.')) {
+              attemptedStrategies.push('method');
+              const methodPart = refName.slice(refName.lastIndexOf('.') + 1);
+              const methodCandidates = this.nameCache.get(methodPart) ?? [];
+              if (methodCandidates.length > 0) {
+                targetId = methodCandidates[0].id;
+              }
+            }
+
+            // Strategy 4: Exact name match (confidence 0.9)
+            if (!targetId) {
+              attemptedStrategies.push('exact');
+              const exactCandidates = this.nameCache.get(refName) ?? [];
+              if (exactCandidates.length > 0) {
+                targetId = exactCandidates[0].id;
+              }
+            }
+
+            // Strategy 5: Fuzzy / lowercase match (confidence 0.5)
+            if (!targetId) {
+              attemptedStrategies.push('fuzzy');
+              const threshold = this.config.fuzzyResolutionThreshold ?? 0.5;
+              const lowerRef = refName.toLowerCase();
+              const fuzzyCandidates = this.lowerNameCache.get(lowerRef) ?? [];
+
+              if (fuzzyCandidates.length > 0) {
+                const match = matchReference(refName, fuzzyCandidates, threshold);
+                if (match) {
+                  targetId = match.nodeId;
+                }
+              }
+
+              // Full-scan fuzzy: only for smaller graphs (O(N*M) is too expensive otherwise)
+              if (!targetId && !skipFullFuzzy) {
+                const allCandidates = [...this.nodeByIdCache.values()];
+                const match = matchReference(refName, allCandidates, threshold);
+                if (match) {
+                  targetId = match.nodeId;
+                }
+              }
             }
           }
 
-          // If still not found, try matchReference across all cached nodes
-          if (!targetId) {
-            const allCandidates = [...this.nodeByIdCache.values()];
-            const match = matchReference(refName, allCandidates, threshold);
-            if (match) {
-              targetId = match.nodeId;
+          if (targetId) {
+            const edgeKind = refKind === 'import' ? 'imports'
+              : refKind === 'extends' ? 'extends'
+              : refKind === 'implements' ? 'implements'
+              : 'calls';
+            const edge: Edge = {
+              source: sourceId,
+              target: targetId,
+              kind: edgeKind,
+              line: line ?? undefined,
+              column: column ?? undefined,
+            };
+            this.db.insertEdge(edge);
+            rawDb.run('DELETE FROM unresolved_refs WHERE id = ?', [refId]);
+            resolved++;
+          } else {
+            const strategiesJson = JSON.stringify(attemptedStrategies);
+            try {
+              rawDb.run(
+                'UPDATE unresolved_refs SET attempted_strategies = ? WHERE id = ?',
+                [strategiesJson, refId]
+              );
+            } catch {
+              logWarn(`ReferenceResolver: failed to record attempted strategies for ref ${refId}`);
             }
           }
         }
-      }
-
-      if (targetId) {
-        // Insert resolved edge
-        const edge: Edge = {
-          source: sourceId,
-          target: targetId,
-          kind: refKind === 'import' ? 'imports' : 'calls',
-          line: line ?? undefined,
-          column: column ?? undefined,
-        };
-        this.db.insertEdge(edge);
-        rawDb.run('DELETE FROM unresolved_refs WHERE id = ?', [refId]);
-        resolved++;
-      } else {
-        // Record attempted strategies on failure
-        const strategiesJson = JSON.stringify(attemptedStrategies);
-        try {
-          rawDb.run(
-            'UPDATE unresolved_refs SET attempted_strategies = ? WHERE id = ?',
-            [strategiesJson, refId]
-          );
-        } catch {
-          logWarn(`ReferenceResolver: failed to record attempted strategies for ref ${refId}`);
-        }
+        rawDb.run('COMMIT');
+      } catch (err) {
+        // Roll back the failed batch but continue with remaining batches
+        try { rawDb.run('ROLLBACK'); } catch { /* already rolled back */ }
+        logWarn(`ReferenceResolver: batch ${batchStart}-${batchEnd} failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
@@ -298,38 +345,89 @@ export class ReferenceResolver {
   // ── Private helpers ────────────────────────────────────────────────────────
 
   /**
-   * Resolve a relative import path to the ID of the first node in the target file.
-   * Returns null if no indexed file matches.
+   * Resolve an import path to a node ID.
+   *
+   * Handles three cases:
+   *  1. Relative paths (JS/TS/Go/…) — resolved via the file tree.
+   *  2. Fully-qualified type imports (Java `import com.example.Foo`) — exact qualifiedName lookup,
+   *     then name+namespace-prefix match.
+   *  3. Namespace-level imports (C# `using MyApp.Services`) — namespace node lookup, then
+   *     namespace prefix cache (O(1)) to find any class in that namespace.
    */
   private _resolveImportPath(importPath: string, sourceFilePath: string): string | null {
-    if (!importPath.startsWith('.')) return null;
-
-    const sourceDir = sourceFilePath.replace(/[^/]+$/, '');
-    const segments = (sourceDir + importPath).split('/');
-    const normalized: string[] = [];
-    for (const seg of segments) {
-      if (seg === '..') normalized.pop();
-      else if (seg !== '.') normalized.push(seg);
-    }
-    const basePath = normalized.join('/');
-
-    const candidates = [
-      basePath,
-      basePath + '.ts',
-      basePath + '.tsx',
-      basePath + '.js',
-      basePath + '.jsx',
-      basePath + '/index.ts',
-      basePath + '/index.tsx',
-      basePath + '/index.js',
-    ];
-
-    const rawDb = (this.db as any).db;
-    for (const candidate of candidates) {
-      const row = rawDb.get('SELECT id FROM nodes WHERE file_path = ? LIMIT 1', [candidate]);
-      if (row) return row.id;
+    // ── 1. Relative path (JS/TS etc.) ──────────────────────────────────────────
+    if (importPath.startsWith('.')) {
+      const sourceDir = sourceFilePath.replace(/[^/]+$/, '');
+      const segments = (sourceDir + importPath).split('/');
+      const normalized: string[] = [];
+      for (const seg of segments) {
+        if (seg === '..') normalized.pop();
+        else if (seg !== '.') normalized.push(seg);
+      }
+      const basePath = normalized.join('/');
+      const candidates = [
+        basePath,
+        basePath + '.ts', basePath + '.tsx',
+        basePath + '.js', basePath + '.jsx',
+        basePath + '/index.ts', basePath + '/index.tsx', basePath + '/index.js',
+      ];
+      const rawDb = (this.db as any).db;
+      for (const candidate of candidates) {
+        const row = rawDb.get('SELECT id FROM nodes WHERE file_path = ? LIMIT 1', [candidate]);
+        if (row) return row.id;
+      }
+      return null;
     }
 
+    // ── 2. Wildcard namespace import (`import com.example.*`, `using static …`) ─
+    if (importPath.endsWith('.*') || importPath.endsWith('*')) {
+      const ns = importPath.replace(/\.\*$/, '').replace(/\*$/, '');
+      return this.namespacePrefixCache.get(ns) ?? null;
+    }
+
+    // ── 3. Exact qualifiedName match (Java `import com.example.Foo`) ───────────
+    const exact = this.qualifiedNameCache.get(importPath);
+    if (exact) return exact.id;
+
+    // ── 4. Name + namespace prefix (Java: last segment is the type name) ────────
+    const lastDot = importPath.lastIndexOf('.');
+    if (lastDot > 0) {
+      const typeName = importPath.slice(lastDot + 1);
+      const namespace = importPath.slice(0, lastDot);
+      const candidates = this.nameCache.get(typeName) ?? [];
+      for (const candidate of candidates) {
+        if (candidate.qualifiedName && candidate.qualifiedName.startsWith(namespace)) {
+          return candidate.id;
+        }
+      }
+    }
+
+    // ── 5. Namespace-level import (C# `using MyApp.Services`) ──────────────────
+    // First check for an explicit namespace node with this name
+    const nsCandidates = this.nameCache.get(importPath.split('.').pop() ?? '') ?? [];
+    for (const candidate of nsCandidates) {
+      if (candidate.kind === 'namespace' && candidate.name === importPath) return candidate.id;
+    }
+    // Then fall back to the prefix cache: return any class/interface in this namespace
+    return this.namespacePrefixCache.get(importPath) ?? null;
+  }
+
+  /**
+   * Resolve a bare type name to a node ID.
+   * Used for extends/implements refs where we have only the unqualified type name.
+   * Prefers class/interface/trait/protocol nodes over other kinds.
+   */
+  private _resolveTypeName(name: string): string | null {
+    const candidates = this.nameCache.get(name) ?? [];
+    if (candidates.length > 0) {
+      const preferred = candidates.find(n =>
+        n.kind === 'class' || n.kind === 'interface' || n.kind === 'trait' || n.kind === 'protocol'
+      );
+      return (preferred ?? candidates[0]).id;
+    }
+    // Try as a fully-qualified name
+    const qualified = this.qualifiedNameCache.get(name);
+    if (qualified) return qualified.id;
     return null;
   }
 

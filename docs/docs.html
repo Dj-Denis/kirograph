@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KiroGraph Docs: Full Reference</title>
+  <meta name="description" content="Full documentation for KiroGraph: installation, quick start, MCP tools, CLI reference, configuration, and more.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png">
+</head>
+<body>
+
+<!-- ── Fixed background logo banner ── -->
+<div class="logo-banner" aria-hidden="true">
+  <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/logo.png" alt="">
+</div>
+
+<!-- ── Nav ── -->
+<nav class="nav">
+  <a href="index.html" class="nav-brand">
+    KiroGraph
+  </a>
+  <ul class="nav-links">
+    <li><a href="index.html">Home</a></li>
+    <li><a href="docs.html" class="active">Docs</a></li>
+    <li><a href="changelog.html">Changelog</a></li>
+    <li>
+      <a href="https://github.com/davide-desio-eleva/kirograph" class="nav-gh" title="GitHub" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+      </a>
+    </li>
+    <li>
+      <a href="https://www.npmjs.com/package/kirograph" class="nav-gh" title="npm" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M0 0v16h16V0H0zm13 13H8V5h-2v8H3V3h10v10z"/>
+        </svg>
+      </a>
+    </li>
+  </ul>
+</nav>
+
+<!-- ── Docs layout ── -->
+<div class="docs-layout docs-layout-three">
+
+  <!-- Sidebar -->
+  <aside class="docs-sidebar" id="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Getting Started</div>
+      <a href="#why-kirograph" class="sidebar-link">Why KiroGraph</a>
+      <a href="#installation" class="sidebar-link">Installation</a>
+      <a href="#quick-start" class="sidebar-link">Quick Start</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Core Concepts</div>
+      <a href="#how-indexing-works" class="sidebar-link">How Indexing Works</a>
+      <a href="#languages" class="sidebar-link">Languages</a>
+      <a href="#frameworks" class="sidebar-link">Frameworks</a>
+      <a href="#using-with-kiro" class="sidebar-link">Using with Kiro</a>
+      <a href="#other-tools" class="sidebar-link">Other Tools (Experimental)</a>
+      <a href="#configuration" class="sidebar-link">Configuration</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Reference</div>
+      <a href="mcp-tools.html" class="sidebar-link">MCP Tools</a>
+      <a href="cli.html" class="sidebar-link">CLI Reference</a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Advanced</div>
+      <a href="#memory" class="sidebar-link">Memory</a>
+      <a href="#documentation" class="sidebar-link">Documentation</a>
+      <a href="#data" class="sidebar-link">Data</a>
+      <a href="#caveman-mode" class="sidebar-link">Caveman Mode</a>
+      <a href="#shell-compression" class="sidebar-link">Shell Compression</a>
+      <a href="#compression-caveman" class="sidebar-link" style="padding-left:2rem">Coexistence with Caveman</a>
+      <a href="#savings-heuristics" class="sidebar-link">Savings Heuristics</a>
+      <a href="#credits" class="sidebar-link">Credits</a>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="docs-content" id="docs-main">
+
+    <!-- ── Why KiroGraph ── -->
+    <h2 id="why-kirograph">Why KiroGraph</h2>
+
+    <p>KiroGraph is a semantic code knowledge graph built specifically for <a href="https://kiro.dev" target="_blank" rel="noopener">Kiro</a>. It gives Kiro a pre-indexed understanding of your codebase: symbol relationships, call graphs, type hierarchies, impact radius, so it can answer complex questions in a single MCP tool call instead of cascading through file reads, greps, and globs.</p>
+
+    <h3>The problem</h3>
+    <p>When an AI coding agent works on a complex task, it explores your codebase one tool call at a time: read a file, grep for a symbol, glob for related files, read another file. Each of those burns context window and adds latency. On large codebases this becomes the bottleneck: not the reasoning, but the exploration.</p>
+
+    <h3>The approach</h3>
+    <p>KiroGraph parses your entire codebase with <a href="https://tree-sitter.github.io/tree-sitter/" target="_blank" rel="noopener">tree-sitter</a>, extracts symbols and their relationships into a local SQLite graph database, and optionally generates vector embeddings for natural-language search. The result is a structured knowledge graph that can answer "who calls this function?", "what breaks if I change this?", or "find code related to authentication" in milliseconds, without reading a single file.</p>
+
+    <h3>Why Kiro</h3>
+    <p>KiroGraph is designed around Kiro's architecture:</p>
+    <ul>
+      <li><strong>MCP integration</strong>: Kiro's native MCP support means KiroGraph tools are auto-approved and always available, no manual configuration needed.</li>
+      <li><strong>Hooks system</strong>: A single <code>agentStop</code> hook asks the agent to sync the index if any files changed during the session. Zero overhead during editing, no background watcher process.</li>
+      <li><strong>Steering files</strong>: Kiro's steering mechanism teaches the agent to prefer graph tools over file scanning, always in context with no extra tool calls.</li>
+      <li><strong>CLI agent</strong>: Kiro CLI's agent system allows a dedicated KiroGraph agent with session-boundary sync hooks.</li>
+    </ul>
+    <p>This tight integration is why Kiro is the primary and fully supported target. The hooks, steering, and agent config are all Kiro-native concepts that make the experience seamless.</p>
+
+    <h3>Scope and other tools</h3>
+    <p>The core of KiroGraph (the graph database, tree-sitter parsing, MCP server, and CLI) is tool-agnostic. Any MCP-capable client can query the same graph. Experimental integrations for Claude Code and Codex are available via <code>kirograph install --target claude|codex</code>, but they lack the automatic sync hooks and steering that make the Kiro experience seamless.</p>
+    <p>Issues and PRs for non-Kiro targets are welcome, but there is no guarantee they will be supported or merged without active help from the contributor. The project's development focus remains on the Kiro integration.</p>
+
+    <!-- ── Installation ── -->
+    <h2 id="installation">Installation</h2>
+
+    <h3 id="install-npm">From npm</h3>
+    <pre><code>npm install -g kirograph</code></pre>
+
+    <h3 id="install-source">From source</h3>
+    <pre><code>git clone https://github.com/davide-desio-eleva/kirograph.git
+cd kirograph
+npm install
+npm run build
+sudo npm install -g .</code></pre>
+    <p>After building, both <code>kirograph</code> and the short alias <code>kg</code> are available globally.</p>
+
+    <h3 id="verify">Verify</h3>
+    <pre><code>kirograph --version</code></pre>
+
+    <h3 id="uninstalling">Uninstalling</h3>
+    <pre><code># Remove from a project
+kirograph uninit [path]      # prompts to remove integration files and .kirograph/ data
+kirograph uninit --force     # remove everything without confirmation
+
+# Remove the CLI globally (npm)
+npm uninstall -g kirograph
+
+# Remove the CLI globally (from source)
+cd kirograph && npm uninstall -g .</code></pre>
+
+    <!-- ── Quick Start ── -->
+    <h2 id="quick-start">Quick Start</h2>
+
+    <p>Run this inside any project you want to index:</p>
+
+    <pre><code>kirograph install    # interactive setup: wires MCP + hooks + steering + CLI agent</code></pre>
+
+    <p>The installer prompts you for:</p>
+    <ul>
+      <li>Whether to enable embeddings (semantic search)</li>
+      <li>Embedding model and semantic engine</li>
+      <li>Whether to enable architecture analysis</li>
+      <li>Whether to enable documentation indexing</li>
+      <li>Whether to enable tabular data indexing</li>
+      <li>Caveman mode level</li>
+      <li>Shell compression (on/off)</li>
+      <li>Whether to run an initial index immediately</li>
+    </ul>
+
+    <p>Then restart Kiro IDE (or run <code>kiro-cli --agent kirograph</code>). Kiro will now use KiroGraph tools automatically whenever you ask it to work on your code.</p>
+
+    <div class="callout callout-tip">
+      <strong>Tip:</strong> You can also use the short alias <code>kg install</code>.
+    </div>
+
+    <!-- ── How Indexing Works ── -->
+    <h2 id="how-indexing-works">How Indexing Works</h2>
+
+    <p>Indexing has five layers: <strong>structural</strong> (always on), <strong>semantic</strong> (opt-in), <strong>architecture</strong> (opt-in), <strong>documentation</strong> (opt-in), and <strong>data</strong> (opt-in).</p>
+
+    <h3 id="structural-layer">Structural layer</h3>
+    <p>tree-sitter parses every source file into an AST. Nodes and edges are extracted and written to <code>.kirograph/kirograph.db</code>. This powers all graph traversal tools and exact/FTS symbol search. No extra dependencies. Runs on every <code>kirograph index</code> or <code>kirograph sync</code>.</p>
+
+    <p>Extracts <strong>24 node kinds</strong>: <code>function</code>, <code>method</code>, <code>class</code>, <code>interface</code>, <code>struct</code>, <code>trait</code>, <code>protocol</code>, <code>enum</code>, <code>type_alias</code>, <code>property</code>, <code>field</code>, <code>variable</code>, <code>constant</code>, <code>enum_member</code>, <code>parameter</code>, <code>import</code>, <code>export</code>, <code>route</code>, <code>component</code>, <code>file</code>, <code>module</code>, <code>namespace</code>, and more.</p>
+
+    <p><strong>13 edge types</strong>: <code>calls</code>, <code>imports</code>, <code>exports</code>, <code>extends</code>, <code>implements</code>, <code>contains</code>, <code>references</code>, <code>instantiates</code>, <code>overrides</code>, <code>decorates</code>, <code>type_of</code>, <code>returns</code>, <code>uses</code>.</p>
+
+    <h3 id="semantic-layer">Semantic layer (opt-in)</h3>
+    <p>When <code>enableEmbeddings: true</code>, KiroGraph generates 768-dimensional vector embeddings for every embeddable symbol using <code>nomic-ai/nomic-embed-text-v1.5</code> (~130 MB, downloaded once to <code>~/.kirograph/models/</code>). Powers natural-language search in <code>kirograph_context</code>.</p>
+
+    <p>Seven pluggable semantic engines:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Engine</th><th>Store</th><th>Search type</th><th>Extra deps</th></tr></thead>
+        <tbody>
+          <tr><td><code>cosine</code> <em>(default)</em></td><td><code>kirograph.db</code></td><td>Exact cosine, linear scan</td><td>none</td></tr>
+          <tr><td><code>sqlite-vec</code></td><td><code>.kirograph/vec.db</code></td><td>ANN, sub-linear</td><td><code>better-sqlite3</code>, <code>sqlite-vec</code></td></tr>
+          <tr><td><code>orama</code></td><td><code>.kirograph/orama.json</code></td><td>Hybrid (full-text + vector)</td><td><code>@orama/orama</code></td></tr>
+          <tr><td><code>pglite</code></td><td><code>.kirograph/pglite/</code></td><td>Hybrid, exact (WASM pgvector)</td><td><code>@electric-sql/pglite</code></td></tr>
+          <tr><td><code>lancedb</code></td><td><code>.kirograph/lancedb/</code></td><td>ANN, sub-linear</td><td><code>@lancedb/lancedb</code></td></tr>
+          <tr><td><code>qdrant</code></td><td><code>.kirograph/qdrant/</code></td><td>ANN (HNSW), sub-linear</td><td><code>qdrant-local</code></td></tr>
+          <tr><td><code>typesense</code></td><td><code>.kirograph/typesense/</code></td><td>ANN (HNSW), sub-linear</td><td><code>typesense</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="architecture-layer">Architecture layer (opt-in)</h3>
+    <p>When <code>enableArchitecture: true</code>, KiroGraph detects packages and architectural layers (api, service, data, ui, shared) and computes coupling metrics (Ca, Ce, instability) between them. Results stored in <code>arch_*</code> tables in <code>kirograph.db</code>.</p>
+
+    <h3 id="documentation-layer">Documentation layer (opt-in)</h3>
+    <p>When <code>enableDocs: true</code>, KiroGraph indexes project documentation by heading hierarchy and section structure. Instead of reading entire doc files, agents retrieve exactly the section they need via stable section IDs.</p>
+    <p>Supports 9 formats: Markdown (.md, .mdx, .cheatmd), reStructuredText (.rst), AsciiDoc (.adoc), RDoc (.rdoc), Org-mode (.org), HTML (.html), plain text (.txt), and OpenAPI/Swagger specs (content-detected in .yaml/.json files).</p>
+    <p>Sections are cross-referenced to code symbols via backtick detection, CamelCase/snake_case pattern matching, and stored as <code>doc_code_refs</code> using stable <code>qualified_name</code> keys.</p>
+
+    <h3 id="data-layer">Data layer (opt-in)</h3>
+    <p>When <code>enableData: true</code>, KiroGraph indexes tabular data files (CSV, TSV, JSONL, JSON, Excel, Parquet) that live alongside your code. Instead of reading raw data files into context, agents query structured schemas and filtered rows — saving 95–99% of tokens.</p>
+    <p>Supports 6 formats: CSV/TSV (built-in, streaming), JSONL/NDJSON (built-in), JSON arrays (built-in), Excel .xlsx/.xls (optional dep: <code>xlsx</code>), Parquet (optional dep: <code>parquetjs-lite</code>).</p>
+    <p>Each dataset is profiled with column types, cardinality, null rates, min/max, sample values, and auto-generated NL summaries. Data files are cross-referenced to code symbols via path detection (<code>readFileSync</code>, <code>pd.read_csv</code>, SQL <code>COPY FROM</code>, etc.) and stored as <code>data_code_refs</code>.</p>
+
+    <!-- ── Languages & Frameworks ── -->
+    <h2 id="languages">Supported Languages</h2>
+
+    <!-- Search filter -->
+    <div style="max-width: 400px; margin: 0 auto 1.5rem; position: relative;">
+      <input type="text" id="lang-fw-search" placeholder="Search languages & frameworks..." autocomplete="off"
+        style="width: 100%; padding: 0.6rem 1rem 0.6rem 2.5rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.2s;"
+        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+      <svg style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    </div>
+
+    <h3 id="lang-general">General-purpose</h3>
+    <div class="table-wrap" data-searchable>
+      <table>
+        <thead><tr><th>Language</th><th>Extensions</th></tr></thead>
+        <tbody>
+          <tr data-tags="typescript tsx"><td>TypeScript</td><td><code>.ts</code></td></tr>
+          <tr data-tags="javascript jsx"><td>JavaScript</td><td><code>.js</code></td></tr>
+          <tr data-tags="typescript tsx react"><td>TSX</td><td><code>.tsx</code></td></tr>
+          <tr data-tags="javascript jsx react"><td>JSX</td><td><code>.jsx</code></td></tr>
+          <tr data-tags="python django flask fastapi"><td>Python</td><td><code>.py</code></td></tr>
+          <tr data-tags="go golang"><td>Go</td><td><code>.go</code></td></tr>
+          <tr data-tags="rust"><td>Rust</td><td><code>.rs</code></td></tr>
+          <tr data-tags="java spring"><td>Java</td><td><code>.java</code></td></tr>
+          <tr data-tags="c"><td>C</td><td><code>.c</code>, <code>.h</code></td></tr>
+          <tr data-tags="cpp c++"><td>C++</td><td><code>.cpp</code>, <code>.cc</code>, <code>.cxx</code>, <code>.hpp</code></td></tr>
+          <tr data-tags="csharp c# dotnet aspnet"><td>C#</td><td><code>.cs</code></td></tr>
+          <tr data-tags="php laravel"><td>PHP</td><td><code>.php</code></td></tr>
+          <tr data-tags="ruby rails"><td>Ruby</td><td><code>.rb</code></td></tr>
+          <tr data-tags="swift ios macos swiftui"><td>Swift</td><td><code>.swift</code></td></tr>
+          <tr data-tags="kotlin android"><td>Kotlin</td><td><code>.kt</code></td></tr>
+          <tr data-tags="dart flutter"><td>Dart</td><td><code>.dart</code></td></tr>
+          <tr data-tags="scala jvm play akka"><td>Scala</td><td><code>.scala</code>, <code>.sc</code>, <code>.sbt</code></td></tr>
+          <tr data-tags="lua"><td>Lua</td><td><code>.lua</code></td></tr>
+          <tr data-tags="zig"><td>Zig</td><td><code>.zig</code>, <code>.zon</code></td></tr>
+          <tr data-tags="bash shell sh zsh"><td>Bash</td><td><code>.sh</code>, <code>.bash</code>, <code>.zsh</code></td></tr>
+          <tr data-tags="ocaml ml functional"><td>OCaml</td><td><code>.ml</code>, <code>.mli</code></td></tr>
+          <tr data-tags="elm functional frontend"><td>Elm</td><td><code>.elm</code></td></tr>
+          <tr data-tags="objective-c objc ios macos"><td>Objective-C</td><td><code>.m</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="lang-frontend">Frontend &amp; UI</h3>
+    <div class="table-wrap" data-searchable>
+      <table>
+        <thead><tr><th>Language</th><th>Extensions</th></tr></thead>
+        <tbody>
+          <tr data-tags="react nextjs react native tsx jsx frontend"><td>React / React Native</td><td><code>.tsx</code>, <code>.jsx</code> (via TypeScript/JSX grammars)</td></tr>
+          <tr data-tags="nextjs react typescript frontend ssr"><td>Next.js</td><td><code>.tsx</code>, <code>.jsx</code> (via TypeScript/JSX grammars)</td></tr>
+          <tr data-tags="angular typescript frontend spa"><td>Angular</td><td><code>.ts</code>, <code>.html</code> (via TypeScript/HTML grammars)</td></tr>
+          <tr data-tags="svelte sveltekit frontend"><td>Svelte</td><td><code>.svelte</code></td></tr>
+          <tr data-tags="vue nuxt frontend"><td>Vue</td><td><code>.vue</code></td></tr>
+          <tr data-tags="html angular templates"><td>HTML</td><td><code>.html</code>, <code>.htm</code></td></tr>
+          <tr data-tags="css styles"><td>CSS</td><td><code>.css</code></td></tr>
+          <tr data-tags="scss sass styles css"><td>SCSS / Sass</td><td><code>.scss</code>, <code>.sass</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="lang-domain">Domain-specific</h3>
+    <div class="table-wrap" data-searchable>
+      <table>
+        <thead><tr><th>Language</th><th>Domain</th><th>Extensions</th></tr></thead>
+        <tbody>
+          <tr data-tags="solidity ethereum blockchain web3 smart contract"><td>Solidity</td><td>Blockchain / Web3</td><td><code>.sol</code></td></tr>
+          <tr data-tags="elixir erlang phoenix"><td>Elixir</td><td>Distributed systems / Real-time</td><td><code>.ex</code>, <code>.exs</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="lang-config">Configuration &amp; Infrastructure</h3>
+    <div class="table-wrap" data-searchable>
+      <table>
+        <thead><tr><th>Language</th><th>Extensions</th></tr></thead>
+        <tbody>
+          <tr data-tags="yaml yml config"><td>YAML</td><td><code>.yaml</code>, <code>.yml</code></td></tr>
+          <tr data-tags="hcl terraform opentofu iac"><td>HCL (Terraform)</td><td><code>.tf</code>, <code>.tfvars</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="frameworks">Framework Detection</h2>
+
+    <p>KiroGraph auto-detects frameworks and enriches the graph with framework-specific semantics (routes, components, lifecycle methods).</p>
+
+    <h3 id="fw-web">Web Frameworks</h3>
+    <div class="table-wrap" data-searchable>
+      <table>
+        <thead><tr><th>Language</th><th>Frameworks</th></tr></thead>
+        <tbody>
+          <tr data-tags="javascript typescript react nextjs angular express fastify koa"><td>JavaScript / TypeScript</td><td>React, Next.js, React Native, Angular, Svelte, SvelteKit, Express, Fastify, Koa</td></tr>
+          <tr data-tags="vue nuxt frontend"><td>Vue</td><td>Vue, Nuxt</td></tr>
+          <tr data-tags="python django flask fastapi"><td>Python</td><td>Django, Flask, FastAPI</td></tr>
+          <tr data-tags="ruby rails"><td>Ruby</td><td>Rails</td></tr>
+          <tr data-tags="java spring"><td>Java</td><td>Spring, Spring Boot, Spring MVC</td></tr>
+          <tr data-tags="scala play akka http4s"><td>Scala</td><td>Play, Akka HTTP, http4s</td></tr>
+          <tr data-tags="go golang"><td>Go</td><td>Generic Go resolver</td></tr>
+          <tr data-tags="rust"><td>Rust</td><td>Generic Rust resolver</td></tr>
+          <tr data-tags="csharp dotnet aspnet"><td>C#</td><td>ASP.NET Core</td></tr>
+          <tr data-tags="swift ios macos swiftui uikit vapor"><td>Swift</td><td>SwiftUI, UIKit, Vapor</td></tr>
+          <tr data-tags="php laravel"><td>PHP</td><td>Laravel</td></tr>
+          <tr data-tags="elixir phoenix"><td>Elixir</td><td>Phoenix</td></tr>
+          <tr data-tags="solidity hardhat foundry truffle ethereum web3"><td>Solidity</td><td>Hardhat, Foundry, Truffle (OpenZeppelin patterns)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="fw-iac">Infrastructure as Code</h3>
+    <div class="table-wrap" data-searchable>
+      <table>
+        <thead><tr><th>Tool</th><th>Detection</th></tr></thead>
+        <tbody>
+          <tr data-tags="aws cdk typescript python iac cloud"><td>AWS CDK</td><td><code>cdk.json</code> or <code>aws-cdk-lib</code> in deps</td></tr>
+          <tr data-tags="sst typescript aws iac cloud serverless"><td>SST</td><td><code>sst.config.ts</code> or <code>sst</code> in deps</td></tr>
+          <tr data-tags="serverless framework aws lambda iac cloud"><td>Serverless Framework</td><td><code>serverless.yml</code> or <code>serverless.ts</code></td></tr>
+          <tr data-tags="aws sam lambda iac cloud serverless"><td>AWS SAM</td><td><code>template.yaml</code> with <code>AWS::Serverless</code></td></tr>
+          <tr data-tags="terraform opentofu hcl iac cloud hashicorp"><td>Terraform / OpenTofu</td><td><code>.terraform/</code> or <code>.tf</code> files</td></tr>
+          <tr data-tags="pulumi typescript python go iac cloud"><td>Pulumi</td><td><code>Pulumi.yaml</code> or <code>@pulumi/*</code> deps</td></tr>
+          <tr data-tags="cloudformation aws iac cloud yaml"><td>CloudFormation</td><td><code>AWSTemplateFormatVersion</code> in template</td></tr>
+          <tr data-tags="amplify aws iac cloud typescript backend"><td>AWS Amplify Gen 2</td><td><code>amplify/backend.ts</code> or <code>@aws-amplify/backend</code> in deps</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="fw-containers">Containers &amp; Orchestration</h3>
+    <div class="table-wrap" data-searchable>
+      <table>
+        <thead><tr><th>Tool</th><th>Detection</th></tr></thead>
+        <tbody>
+          <tr data-tags="kubernetes k8s helm containers orchestration yaml"><td>Kubernetes / Helm</td><td><code>Chart.yaml</code> or K8s manifest directories</td></tr>
+          <tr data-tags="docker compose containers yaml"><td>Docker Compose</td><td><code>docker-compose.yml</code> or <code>compose.yaml</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="fw-config">Configuration Management</h3>
+    <div class="table-wrap" data-searchable>
+      <table>
+        <thead><tr><th>Tool</th><th>Detection</th></tr></thead>
+        <tbody>
+          <tr data-tags="ansible automation yaml devops"><td>Ansible</td><td><code>ansible.cfg</code> or standard role directory structure</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Detected frameworks are stored in config and used to improve symbol extraction and resolution. Routes, components, and lifecycle methods are extracted as first-class nodes in the graph.</p>
+
+    <script>
+    (function() {
+      const input = document.getElementById('lang-fw-search');
+      if (!input) return;
+      const tables = document.querySelectorAll('.table-wrap[data-searchable]');
+      input.addEventListener('input', function() {
+        const query = this.value.toLowerCase().trim();
+        tables.forEach(wrap => {
+          const rows = wrap.querySelectorAll('tbody tr[data-tags]');
+          let anyVisible = false;
+          rows.forEach(row => {
+            if (!query) { row.style.display = ''; anyVisible = true; return; }
+            const text = row.textContent.toLowerCase();
+            const tags = (row.getAttribute('data-tags') || '').toLowerCase();
+            const match = text.includes(query) || tags.includes(query);
+            row.style.display = match ? '' : 'none';
+            if (match) anyVisible = true;
+          });
+          // Hide the heading if no rows visible
+          const heading = wrap.previousElementSibling;
+          if (heading && heading.tagName === 'H3') {
+            heading.style.display = (!query || anyVisible) ? '' : 'none';
+          }
+          wrap.style.display = (!query || anyVisible) ? '' : 'none';
+        });
+      });
+    })();
+    </script>
+
+    <!-- ── Using with Kiro ── -->
+    <h2 id="using-with-kiro">Using with Kiro</h2>
+
+    <p><code>kirograph install</code> sets up four things in your Kiro workspace. All coexist, so you can switch between IDE and CLI freely. <strong>Kiro is the primary and fully supported target.</strong></p>
+
+    <h3 id="mcp-server">MCP Server (<code>.kiro/settings/mcp.json</code>)</h3>
+    <p>Registers the KiroGraph MCP server with all 20 tools auto-approved. Used by both the IDE and the CLI agent.</p>
+    <pre><code>{
+  "mcpServers": {
+    "kirograph": {
+      "command": "kirograph",
+      "args": ["serve", "--mcp"],
+      "autoApprove": [
+        "kirograph_search", "kirograph_context", "kirograph_callers",
+        "kirograph_callees", "kirograph_impact", "kirograph_node",
+        "kirograph_status", "kirograph_files", "kirograph_dead_code",
+        "kirograph_circular_deps", "kirograph_path", "kirograph_type_hierarchy",
+        "kirograph_architecture", "kirograph_coupling", "kirograph_package",
+        "kirograph_hotspots", "kirograph_surprising", "kirograph_diff",
+        "kirograph_exec", "kirograph_gain"
+      ]
+    }
+  }
+}</code></pre>
+
+    <h3 id="ide-hooks">IDE Hooks (<code>.kiro/hooks/</code>)</h3>
+    <p>Up to three hooks are installed (<code>.kiro.hook</code> extension):</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Hook file</th><th>Event</th><th>Type</th><th>Behavior</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph-sync-if-dirty.kiro.hook</code></td><td><code>agentStop</code></td><td><code>runCommand</code></td><td>Runs <code>kirograph sync --quiet</code> when the agent stops. Skips unchanged files via content hashing, so it's fast even when nothing changed.</td></tr>
+          <tr><td><code>kirograph-compress-hint.kiro.hook</code></td><td><code>preToolUse</code> (shell)</td><td><code>askAgent</code></td><td>Reminds the agent to use <code>kirograph_exec</code> for commands that benefit from token compression. Only installed when shell compression is enabled.</td></tr>
+          <tr><td><code>kirograph-mem-capture.kiro.hook</code></td><td><code>agentStop</code></td><td><code>askAgent</code></td><td>Prompts the agent to store important observations (decisions, errors, patterns) in memory at the end of each session. Only installed when memory is enabled.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>The sync hook replaces the previous per-file approach (mark-dirty-on-save, mark-dirty-on-create, sync-on-delete). A single <code>agentStop</code> hook handles all file changes in one pass with zero overhead during active editing.</p>
+
+    <h3 id="cli-agent">CLI Agent Config (<code>.kiro/agents/kirograph.json</code>)</h3>
+    <p>A custom agent for Kiro CLI that wires up the MCP server and references the steering file as a resource. Sync is handled at session boundaries:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Event</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><code>agentSpawn</code></td><td><code>kirograph sync-if-dirty --quiet</code> (catches edits made between sessions)</td></tr>
+          <tr><td><code>userPromptSubmit</code></td><td><code>kirograph sync-if-dirty --quiet</code> (keeps graph fresh within a session)</td></tr>
+          <tr><td><code>stop</code></td><td><code>kirograph sync-if-dirty --quiet</code> (deferred flush, mirrors IDE agentStop)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top: 0.75rem; color: var(--text-muted); font-size: 0.85rem;">The CLI agent format only supports <code>command</code> hooks (shell commands), not <code>askAgent</code> prompts. Memory capture and compression hints are handled via the steering file instructions instead — the agent reads them from <code>.kiro/steering/kirograph.md</code> which is referenced as a resource.</p>
+    <pre><code>kiro-cli --agent kirograph
+# or, inside an active session:
+/agent swap kirograph</code></pre>
+
+    <h3 id="steering-file">Steering File (<code>.kiro/steering/kirograph.md</code>)</h3>
+    <p>Teaches the Kiro IDE to prefer graph tools over file scanning when <code>.kirograph/</code> exists. Uses <code>inclusion: always</code> so it's in context on every turn. The CLI agent has the same instructions inlined in its <code>prompt</code> field.</p>
+
+    <!-- ── Other Tools (Experimental) ── -->
+    <h2 id="other-tools">Other Tools (Experimental)</h2>
+
+    <div class="callout" style="border-color: var(--yellow); background: rgba(210,153,34,0.05);">
+      <strong>⚠️ Not fully tested, community-contributed.</strong> The integrations below are outside the original scope of KiroGraph. They are provided as-is. Issues and PRs related to these targets are welcome, but there is no guarantee they will be supported or merged without active help from the contributor.
+    </div>
+
+    <p>KiroGraph can also be installed for other MCP-capable coding agents. All targets share the same <code>.kirograph/</code> data; if the project is already initialized, installing another target only writes that tool's integration files.</p>
+
+    <h3 id="claude-code">Claude Code</h3>
+    <pre><code>kirograph install --target claude</code></pre>
+    <p>Writes <code>.mcp.json</code> (project-scoped MCP config), <code>.kirograph/claude.md</code> (tool guidance), and imports it from <code>CLAUDE.md</code>. Claude Code prompts for MCP approval the first time it sees <code>.mcp.json</code>.</p>
+
+    <h3 id="codex">Codex</h3>
+    <pre><code>kirograph install --target codex</code></pre>
+    <p>Writes <code>.kirograph/codex.md</code> (tool guidance) and a generated block in <code>AGENTS.md</code>. Codex MCP configuration is user-scoped, so the installer prints the exact <code>codex mcp add ...</code> command instead of editing files outside the project.</p>
+
+    <!-- ── Configuration ── -->
+    <h2 id="configuration">Configuration</h2>
+
+    <p>All configuration is in <code>.kirograph/config.json</code>. The interactive <code>kirograph install</code> writes this for you.</p>
+
+    <!-- Search box for config fields -->
+    <div style="max-width: 400px; margin: 0 auto 1.5rem; position: relative;">
+      <input type="text" id="config-search" placeholder="Search config fields..." autocomplete="off"
+        style="width: 100%; padding: 0.6rem 1rem 0.6rem 2.5rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 0.9rem; outline: none; transition: border-color 0.2s;"
+        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+      <svg style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    </div>
+
+    <div class="table-wrap" id="config-table">
+      <table>
+        <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Indexing</td></tr>
+          <tr><td><code>languages</code></td><td>string[]</td><td><code>[]</code></td><td>Limit indexing to specific languages (empty = all)</td></tr>
+          <tr><td><code>include</code></td><td>string[]</td><td><code>[]</code></td><td>Glob patterns to include (empty = include everything not excluded)</td></tr>
+          <tr><td><code>exclude</code></td><td>string[]</td><td>see below</td><td>Glob patterns to exclude from indexing</td></tr>
+          <tr><td><code>maxFileSize</code></td><td>number</td><td><code>1048576</code></td><td>Skip files larger than this (bytes, default 1MB)</td></tr>
+          <tr><td><code>extractDocstrings</code></td><td>boolean</td><td><code>true</code></td><td>Extract JSDoc, docstrings, and comments</td></tr>
+          <tr><td><code>trackCallSites</code></td><td>boolean</td><td><code>true</code></td><td>Record line/column for call edges</td></tr>
+          <tr><td><code>frameworkHints</code></td><td>string[]</td><td>auto</td><td>Override framework detection (e.g. <code>["react", "express"]</code>)</td></tr>
+          <tr><td><code>fuzzyResolutionThreshold</code></td><td>number</td><td><code>0.5</code></td><td>Name matching threshold for cross-file resolution (0.0–1.0)</td></tr>
+          <tr><td><code>syncWarningThreshold</code></td><td>number</td><td><code>10</code></td><td>Warn in <code>kirograph_status</code> when pending files exceed this count (0 = disable)</td></tr>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Semantic Search</td></tr>
+          <tr><td><code>enableEmbeddings</code></td><td>boolean</td><td><code>false</code></td><td>Enable semantic (vector) search</td></tr>
+          <tr><td><code>embeddingModel</code></td><td>string</td><td><code>"nomic-ai/nomic-embed-text-v1.5"</code></td><td>HuggingFace model ID</td></tr>
+          <tr><td><code>embeddingDim</code></td><td>number</td><td><code>768</code></td><td>Embedding dimension</td></tr>
+          <tr><td><code>semanticEngine</code></td><td>string</td><td><code>"cosine"</code></td><td>Engine: <code>cosine</code>, <code>sqlite-vec</code>, <code>orama</code>, <code>pglite</code>, <code>lancedb</code>, <code>qdrant</code>, <code>typesense</code></td></tr>
+          <tr><td><code>useVecIndex</code></td><td>boolean</td><td><code>false</code></td><td>Deprecated alias for <code>semanticEngine: "sqlite-vec"</code></td></tr>
+          <tr><td><code>typesenseDashboard</code></td><td>boolean</td><td><code>false</code></td><td>Open Typesense dashboard after indexing</td></tr>
+          <tr><td><code>qdrantDashboard</code></td><td>boolean</td><td><code>false</code></td><td>Open Qdrant dashboard after indexing</td></tr>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Architecture</td></tr>
+          <tr><td><code>enableArchitecture</code></td><td>boolean</td><td><code>false</code></td><td>Enable architecture analysis (package graph + layer detection)</td></tr>
+          <tr><td><code>architectureLayers</code></td><td>object</td><td>-</td><td>Custom layer definitions: <code>{ "layerName": ["glob/**"] }</code></td></tr>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Memory</td></tr>
+          <tr><td><code>enableMemory</code></td><td>boolean</td><td><code>false</code></td><td>Enable persistent cross-session memory</td></tr>
+          <tr><td><code>memorySearchAlpha</code></td><td>number</td><td><code>0.5</code></td><td>FTS/vector blend (0 = FTS only, 1 = vector only)</td></tr>
+          <tr><td><code>memoryKeepRaw</code></td><td>boolean</td><td><code>true</code></td><td>Store original text alongside compressed version</td></tr>
+          <tr><td><code>memoryMaxObservations</code></td><td>number</td><td><code>10000</code></td><td>Max observations before auto-pruning oldest</td></tr>
+          <tr><td><code>memorySessionTimeout</code></td><td>number</td><td><code>3600000</code></td><td>Session timeout in ms (default 1 hour)</td></tr>
+          <tr><td><code>memoryContextLimit</code></td><td>number</td><td><code>3</code></td><td>Max observations surfaced in <code>kirograph_context</code></td></tr>
+          <tr><td><code>memoryContextThreshold</code></td><td>number</td><td><code>0.3</code></td><td>Min relevance score to surface in context</td></tr>
+          <tr><td><code>memoryExcludePatterns</code></td><td>string[]</td><td><code>[]</code></td><td>Glob patterns for files to exclude from symbol linking</td></tr>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Documentation</td></tr>
+          <tr><td><code>enableDocs</code></td><td>boolean</td><td><code>false</code></td><td>Enable documentation indexing (section-level retrieval)</td></tr>
+          <tr><td><code>docsInclude</code></td><td>string[]</td><td><code>["**/*.md", ...]</code></td><td>Glob patterns for doc files to include</td></tr>
+          <tr><td><code>docsExclude</code></td><td>string[]</td><td><code>["node_modules/**", ...]</code></td><td>Glob patterns for doc files to exclude</td></tr>
+          <tr><td><code>docsLinkCode</code></td><td>boolean</td><td><code>true</code></td><td>Auto-link doc sections to code symbols</td></tr>
+          <tr><td><code>docsContextLimit</code></td><td>number</td><td><code>0</code></td><td>Max doc sections in <code>kirograph_context</code> (0 = disabled)</td></tr>
+          <tr><td><code>docsContextThreshold</code></td><td>number</td><td><code>0.5</code></td><td>Min confidence for doc refs in context</td></tr>
+          <tr><td><code>docsMaxFileSize</code></td><td>number</td><td><code>1048576</code></td><td>Max doc file size in bytes</td></tr>
+          <tr><td><code>docsSummarization</code></td><td>string</td><td><code>"first-sentence"</code></td><td>Summary strategy: <code>embedding</code>, <code>first-sentence</code>, <code>off</code></td></tr>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Data</td></tr>
+          <tr><td><code>enableData</code></td><td>boolean</td><td><code>false</code></td><td>Enable tabular data indexing and querying</td></tr>
+          <tr><td><code>dataInclude</code></td><td>string[]</td><td><code>["**/*.csv", ...]</code></td><td>Glob patterns for data files to include</td></tr>
+          <tr><td><code>dataExclude</code></td><td>string[]</td><td><code>["node_modules/**", ...]</code></td><td>Glob patterns for data files to exclude</td></tr>
+          <tr><td><code>dataLinkCode</code></td><td>boolean</td><td><code>true</code></td><td>Auto-link data files to code symbols via path detection</td></tr>
+          <tr><td><code>dataContextLimit</code></td><td>number</td><td><code>0</code></td><td>Max datasets in <code>kirograph_context</code> (0 = disabled)</td></tr>
+          <tr><td><code>dataMaxFileSize</code></td><td>number</td><td><code>52428800</code></td><td>Max data file size in bytes (50MB)</td></tr>
+          <tr><td><code>dataMaxRows</code></td><td>number</td><td><code>1000000</code></td><td>Max rows to index per file</td></tr>
+          <tr><td><code>dataQueryLimit</code></td><td>number</td><td><code>500</code></td><td>Max rows returned per query (hard cap)</td></tr>
+          <tr><td><code>dataMaxResponseTokens</code></td><td>number</td><td><code>8000</code></td><td>Max token budget per data tool response</td></tr>
+          <tr><td colspan="4" style="font-weight: 600; background: var(--bg); border-bottom: 2px solid var(--border);">Agent Behavior</td></tr>
+          <tr><td><code>cavemanMode</code></td><td>string</td><td><code>"off"</code></td><td>Communication compression: <code>off</code>, <code>lite</code>, <code>full</code>, <code>ultra</code></td></tr>
+          <tr><td><code>shellCompressionLevel</code></td><td>string</td><td><code>"normal"</code></td><td>Shell command compression: <code>off</code>, <code>normal</code>, <code>aggressive</code>, <code>ultra</code></td></tr>
+          <tr><td><code>minLogLevel</code></td><td>string</td><td><code>"warn"</code></td><td>Log level: <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <script>
+    document.getElementById('config-search')?.addEventListener('input', function() {
+      const q = this.value.toLowerCase();
+      const rows = document.querySelectorAll('#config-table tbody tr');
+      rows.forEach(row => {
+        if (row.querySelector('td[colspan]')) { row.style.display = ''; return; }
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(q) ? '' : 'none';
+      });
+    });
+    </script>
+
+    <!-- ── Memory ── -->
+    <h2 id="memory">Memory (opt-in)</h2>
+
+    <p>When <code>enableMemory: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph stores persistent observations across sessions. Decisions, errors, patterns, and architecture notes are captured with <strong>zero LLM tokens on write</strong> (compression is deterministic, symbol linking is programmatic, embedding uses the local model) and minimal tokens on read. Inspired by <a href="https://github.com/JuliusBrussee/cavemem" target="_blank" rel="noopener">cavemem</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a>.</p>
+
+    <h3>How it works</h3>
+    <p>The write path runs entirely without LLM involvement:</p>
+    <ol>
+      <li>An observation is received (via hook or manual <code>kirograph_mem_store</code> call)</li>
+      <li>If caveman mode is enabled, the text is compressed deterministically using the configured level</li>
+      <li>A content hash deduplicates against existing observations</li>
+      <li>Symbol names in the text are detected and linked to graph nodes via <code>qualified_name</code></li>
+      <li>The observation is embedded using the same local model and semantic engine as code symbols</li>
+    </ol>
+    <p>On read, <code>kirograph_mem_search</code> performs hybrid FTS + vector search. Linked observations also surface automatically in <code>kirograph_context</code> and <code>kirograph_impact</code> results.</p>
+
+    <h3>MCP Tools</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph_mem_search</code></td><td>Hybrid search over observations (FTS + vector, configurable alpha blend)</td></tr>
+          <tr><td><code>kirograph_mem_store</code></td><td>Store an observation with auto-compression, symbol linking, and embedding</td></tr>
+          <tr><td><code>kirograph_mem_timeline</code></td><td>List recent sessions and their observations chronologically</td></tr>
+          <tr><td><code>kirograph_mem_status</code></td><td>Memory subsystem health: sessions, observations, embedding coverage</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>CLI Commands</h3>
+    <pre><code># Search (mirrors kirograph_mem_search)
+kirograph mem search &lt;query&gt;
+kirograph mem search &lt;query&gt; --kind error --limit 5
+
+# Store (mirrors kirograph_mem_store)
+kirograph mem store "decided to use idempotency keys for payments"
+kirograph mem store "auth bug: token refresh missing" --kind error
+
+# Timeline &amp; status
+kirograph mem timeline
+kirograph mem status
+
+# Maintenance (CLI-only)
+kirograph mem prune --older-than 90d
+kirograph mem reembed
+kirograph mem lint
+kirograph mem export --format jsonl</code></pre>
+
+    <h3>Session management</h3>
+    <p>Sessions are managed automatically. On the first <code>kirograph_mem_store</code> call, KiroGraph checks for an active session (same IDE, started within the configured timeout). If none exists, a new session is created. The <code>agentStop</code> hook closes the session automatically.</p>
+    <p>The inactivity timeout defaults to 2 hours and is configurable via <code>memorySessionTimeout</code> (in seconds).</p>
+
+    <h3>Configuration</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>enableMemory</code></td><td>boolean</td><td><code>false</code></td><td>Enable persistent memory</td></tr>
+          <tr><td><code>memorySearchAlpha</code></td><td>number</td><td><code>0.5</code></td><td>FTS/vector blend (0 = pure FTS, 1 = pure vector)</td></tr>
+          <tr><td><code>memoryKeepRaw</code></td><td>boolean</td><td><code>false</code></td><td>Store uncompressed originals when caveman is on</td></tr>
+          <tr><td><code>memoryMaxObservations</code></td><td>number</td><td><code>10000</code></td><td>Auto-prune threshold</td></tr>
+          <tr><td><code>memorySessionTimeout</code></td><td>number</td><td><code>7200</code></td><td>Seconds of inactivity before auto-closing a session</td></tr>
+          <tr><td><code>memoryContextLimit</code></td><td>number</td><td><code>3</code></td><td>Max observations shown in <code>kirograph_context</code></td></tr>
+          <tr><td><code>memoryContextThreshold</code></td><td>number</td><td><code>0.3</code></td><td>Min relevance score to include in context</td></tr>
+          <tr><td><code>memoryExcludePatterns</code></td><td>string[]</td><td><code>[]</code></td><td>Glob patterns for paths to never capture</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Privacy</h3>
+    <p>Wrap sensitive content in <code>&lt;private&gt;...&lt;/private&gt;</code> blocks — they are stripped before storage. All data stays in the local <code>.kirograph/kirograph.db</code> file, same as the rest of the graph.</p>
+
+    <!-- ── Documentation ── -->
+    <h2 id="documentation">Documentation (opt-in)</h2>
+
+    <p>When <code>enableDocs: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph indexes project documentation by heading hierarchy and section structure. Instead of reading entire doc files, agents retrieve exactly the section they need via stable section IDs — saving <strong>92–97% of tokens</strong> compared to reading full files. Inspired by <a href="https://github.com/jgravelle/jdocmunch-mcp" target="_blank" rel="noopener">jDocMunch-MCP</a> by <a href="https://www.linkedin.com/in/j-gravelle-2778223/" target="_blank" rel="noopener">J. Gravelle</a>.</p>
+
+    <h3>How it works</h3>
+    <p>The indexing pipeline:</p>
+    <ol>
+      <li>Scans the project for documentation files matching <code>docsInclude</code> / <code>docsExclude</code> patterns</li>
+      <li>Detects the format (Markdown, RST, AsciiDoc, etc.) and parses headings into a section hierarchy</li>
+      <li>Generates stable section IDs: <code>{file_path}::{ancestor-chain/slug}#{level}</code></li>
+      <li>Computes SHA-256 content hashes for incremental re-indexing (skips unchanged files)</li>
+      <li>If <code>docsLinkCode: true</code>, detects code symbol references (backtick patterns, CamelCase, snake_case) and stores cross-references via <code>qualified_name</code></li>
+      <li>Stores everything in <code>doc_sections</code> and <code>doc_code_refs</code> tables in the same SQLite DB</li>
+    </ol>
+    <p>On read, agents use <code>kirograph_docs_search</code> (FTS5) to find sections, <code>kirograph_docs_section</code> to retrieve content, and <code>kirograph_docs_refs</code> to navigate code ↔ docs cross-references.</p>
+
+    <h3>Supported formats</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Format</th><th>Extensions</th><th>Parsing strategy</th></tr></thead>
+        <tbody>
+          <tr><td>Markdown</td><td><code>.md</code>, <code>.mdx</code>, <code>.cheatmd</code></td><td>ATX (<code>#</code>) + setext headings</td></tr>
+          <tr><td>reStructuredText</td><td><code>.rst</code></td><td>Adornment-based heading detection</td></tr>
+          <tr><td>AsciiDoc</td><td><code>.adoc</code>, <code>.asciidoc</code></td><td><code>=</code> heading hierarchy</td></tr>
+          <tr><td>RDoc</td><td><code>.rdoc</code></td><td><code>=</code> heading hierarchy (Ruby)</td></tr>
+          <tr><td>Org-mode</td><td><code>.org</code></td><td><code>*</code> heading hierarchy</td></tr>
+          <tr><td>HTML</td><td><code>.html</code>, <code>.htm</code></td><td><code>&lt;h1&gt;</code>–<code>&lt;h6&gt;</code> headings</td></tr>
+          <tr><td>Plain text</td><td><code>.txt</code></td><td>ALL CAPS + underline detection</td></tr>
+          <tr><td>OpenAPI/Swagger</td><td><code>.yaml</code>, <code>.yml</code>, <code>.json</code></td><td>Operations grouped by tag (content-detected)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>MCP Tools</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph_docs_toc</code></td><td>Table of contents for a file or the whole project (flat or tree)</td></tr>
+          <tr><td><code>kirograph_docs_search</code></td><td>FTS5 search across documentation sections (independent from code search)</td></tr>
+          <tr><td><code>kirograph_docs_section</code></td><td>Retrieve full content of a section by stable ID, with optional context (ancestors + children)</td></tr>
+          <tr><td><code>kirograph_docs_outline</code></td><td>Heading hierarchy for a single document</td></tr>
+          <tr><td><code>kirograph_docs_refs</code></td><td>Bidirectional code ↔ doc cross-references</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>CLI Commands</h3>
+    <pre><code># Table of contents
+kirograph docs toc                          # whole project
+kirograph docs toc README.md                # single file
+kirograph docs toc README.md --tree         # nested tree
+
+# Search
+kirograph docs search "authentication"
+kirograph docs search "config" --file docs/guide.md --limit 5
+
+# Retrieve a section
+kirograph docs section "README.md::installation#1"
+kirograph docs section "README.md::installation#1" --context
+
+# Outline
+kirograph docs outline docs/api.md
+
+# Cross-references
+kirograph docs refs "docs/auth.md::oauth/token-refresh#2"
+
+# Maintenance
+kirograph docs reindex                      # force full re-index
+kirograph docs lint                         # health checks
+kirograph docs reembed                      # re-embed with current model</code></pre>
+
+    <h3>Context integration (opt-in)</h3>
+    <p>By default, <code>kirograph_context</code> does <strong>not</strong> include doc sections — the agent uses <code>kirograph_docs_*</code> tools explicitly. If you want docs to surface automatically in context results, set <code>docsContextLimit</code> to a value greater than 0 during install (or in config).</p>
+    <p>When enabled, <code>kirograph_context</code> queries <code>doc_code_refs</code> for the symbols it found and includes up to N relevant doc sections (above <code>docsContextThreshold</code> score).</p>
+
+    <h3>Configuration</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>enableDocs</code></td><td>boolean</td><td><code>false</code></td><td>Enable documentation indexing</td></tr>
+          <tr><td><code>docsInclude</code></td><td>string[]</td><td><code>["**/*.md", ...]</code></td><td>Glob patterns for doc files to include</td></tr>
+          <tr><td><code>docsExclude</code></td><td>string[]</td><td><code>["node_modules/**", ...]</code></td><td>Glob patterns for doc files to exclude</td></tr>
+          <tr><td><code>docsLinkCode</code></td><td>boolean</td><td><code>true</code></td><td>Auto-link doc sections to code symbols</td></tr>
+          <tr><td><code>docsContextLimit</code></td><td>number</td><td><code>0</code></td><td>Max doc sections in <code>kirograph_context</code> (0 = disabled)</td></tr>
+          <tr><td><code>docsContextThreshold</code></td><td>number</td><td><code>0.3</code></td><td>Min relevance score for context inclusion</td></tr>
+          <tr><td><code>docsMaxFileSize</code></td><td>number</td><td><code>1048576</code></td><td>Max doc file size in bytes (1 MB)</td></tr>
+          <tr><td><code>docsSummarization</code></td><td>string</td><td><code>"first-sentence"</code></td><td>Summary strategy: <code>embedding</code>, <code>first-sentence</code>, <code>off</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Token savings</h3>
+    <p>Documentation tools are tracked in <code>kirograph_gain</code> as a separate "Docs tools" source category. Typical savings per call:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>Without kirograph</th><th>With kirograph</th><th>Savings</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph_docs_toc</code></td><td>~10,000 tokens</td><td>~400–800</td><td>92–96%</td></tr>
+          <tr><td><code>kirograph_docs_search</code></td><td>~8,000–13,000</td><td>~300–600</td><td>93–97%</td></tr>
+          <tr><td><code>kirograph_docs_section</code></td><td>~2,500</td><td>~200–800</td><td>68–92%</td></tr>
+          <tr><td><code>kirograph_docs_outline</code></td><td>~2,500</td><td>~200–400</td><td>84–92%</td></tr>
+          <tr><td><code>kirograph_docs_refs</code></td><td>~7,400</td><td>~300–500</td><td>93–96%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── Data ── -->
+    <h2 id="data">Data (opt-in)</h2>
+
+    <p>When <code>enableData: true</code> is set in <code>.kirograph/config.json</code>, KiroGraph indexes tabular data files (CSV, TSV, JSONL, JSON, Excel, Parquet) that live alongside your code — test fixtures, seed data, configuration tables, sample datasets. Instead of reading raw data files into context, agents query structured schemas and filtered rows — saving <strong>95–99% of tokens</strong>. Inspired by <a href="https://github.com/jgravelle/jdatamunch-mcp" target="_blank" rel="noopener">jDataMunch-MCP</a> by <a href="https://www.linkedin.com/in/j-gravelle-2778223/" target="_blank" rel="noopener">J. Gravelle</a>.</p>
+
+    <h3>Key features</h3>
+    <ul>
+      <li><strong>Streaming parser</strong>: never loads full files into memory. Processes line-by-line (CSV/JSONL) or in chunks (Excel/Parquet).</li>
+      <li><strong>Column profiling</strong>: type inference (string, integer, float, boolean, date), cardinality, null percentages, min/max, mean, sample values.</li>
+      <li><strong>Server-side computation</strong>: filters, aggregations, joins, and correlations run in SQLite. Only results enter the context window.</li>
+      <li><strong>Incremental indexing</strong>: content hash (SHA-256) per file. Only re-indexes files that changed.</li>
+      <li><strong>Optional format deps</strong>: CSV/TSV/JSONL/JSON are built-in (zero deps). Excel requires <code>xlsx</code>, Parquet requires <code>parquetjs-lite</code>.</li>
+      <li><strong>Code ↔ data linking</strong>: detects file path references in source code and populates <code>data_code_refs</code>. Enables test fixture awareness in <code>kirograph affected</code>.</li>
+      <li><strong>Schema drift detection</strong>: tracks profile history across re-indexes. <code>kirograph data drift</code> shows added/removed/changed columns.</li>
+      <li><strong>NL summaries</strong>: auto-generated natural-language descriptions for each column based on profile patterns.</li>
+      <li><strong>Validation rules</strong>: infers rules from profiles (required, type, range, enum, uniqueness).</li>
+      <li><strong>Anti-loop detection</strong>: warns when agent paginates row-by-row instead of using aggregations.</li>
+      <li><strong>Token budget enforcement</strong>: responses exceeding <code>dataMaxResponseTokens</code> are truncated.</li>
+    </ul>
+
+    <h3>Supported formats</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Format</th><th>Extensions</th><th>Dependencies</th><th>Parsing strategy</th></tr></thead>
+        <tbody>
+          <tr><td>CSV</td><td><code>.csv</code></td><td>None (built-in)</td><td>Line-by-line streaming</td></tr>
+          <tr><td>TSV</td><td><code>.tsv</code></td><td>None (built-in)</td><td>Line-by-line streaming (tab delimiter)</td></tr>
+          <tr><td>JSONL / NDJSON</td><td><code>.jsonl</code>, <code>.ndjson</code></td><td>None (built-in)</td><td>Line-by-line streaming</td></tr>
+          <tr><td>JSON array</td><td><code>.json</code> (in data/ dirs)</td><td>None (built-in)</td><td>Streaming array parse</td></tr>
+          <tr><td>Excel</td><td><code>.xlsx</code>, <code>.xls</code></td><td><code>xlsx</code> (optional)</td><td>Sheet-by-sheet, row iteration</td></tr>
+          <tr><td>Parquet</td><td><code>.parquet</code></td><td><code>parquetjs-lite</code> (optional)</td><td>Column-chunk streaming</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>MCP tools</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph_data_list</code></td><td>List all indexed datasets with row counts, column counts, file sizes</td></tr>
+          <tr><td><code>kirograph_data_describe</code></td><td>Full schema profile: column names, types, cardinality, null%, samples</td></tr>
+          <tr><td><code>kirograph_data_query</code></td><td>Filtered row retrieval with structured operators (eq, gt, contains, in, between)</td></tr>
+          <tr><td><code>kirograph_data_aggregate</code></td><td>Server-side GROUP BY: count, sum, avg, min, max, count_distinct</td></tr>
+          <tr><td><code>kirograph_data_search</code></td><td>Search column names and sample values by keyword</td></tr>
+          <tr><td><code>kirograph_data_join</code></td><td>Cross-dataset SQL JOIN (inner, left, right)</td></tr>
+          <tr><td><code>kirograph_data_correlations</code></td><td>Pairwise Pearson correlations between numeric columns</td></tr>
+          <tr><td><code>kirograph_data_quality</code></td><td>Data quality triage: rank columns by risk score</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Configuration</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>enableData</code></td><td>boolean</td><td><code>false</code></td><td>Enable tabular data indexing and querying</td></tr>
+          <tr><td><code>dataInclude</code></td><td>string[]</td><td><code>['**/*.csv', '**/*.tsv', ...]</code></td><td>Glob patterns for data files to include</td></tr>
+          <tr><td><code>dataExclude</code></td><td>string[]</td><td><code>['node_modules/**', ...]</code></td><td>Glob patterns for data files to exclude</td></tr>
+          <tr><td><code>dataContextLimit</code></td><td>number</td><td><code>0</code></td><td>Max datasets in <code>kirograph_context</code> results (0 = disabled)</td></tr>
+          <tr><td><code>dataMaxFileSize</code></td><td>number</td><td><code>52428800</code></td><td>Max data file size in bytes (50MB)</td></tr>
+          <tr><td><code>dataMaxRows</code></td><td>number</td><td><code>1000000</code></td><td>Max rows to index per file</td></tr>
+          <tr><td><code>dataQueryLimit</code></td><td>number</td><td><code>500</code></td><td>Max rows returned per query (hard cap)</td></tr>
+          <tr><td><code>dataMaxResponseTokens</code></td><td>number</td><td><code>8000</code></td><td>Max token budget per response (truncates if exceeded)</td></tr>
+          <tr><td><code>dataLinkCode</code></td><td>boolean</td><td><code>true</code></td><td>Auto-link data files to code symbols via path detection</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Token savings</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>Naive cost (without)</th><th>Typical output (with)</th><th>Savings</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph_data_describe</code></td><td>~50,000–111M tokens</td><td>~2,000–4,000 tokens</td><td>96–99.99%</td></tr>
+          <tr><td><code>kirograph_data_query</code></td><td>~50,000+ tokens</td><td>~1,000–3,000 tokens</td><td>94–99%</td></tr>
+          <tr><td><code>kirograph_data_aggregate</code></td><td>~50,000+ tokens</td><td>~500–1,500 tokens</td><td>97–99%</td></tr>
+          <tr><td><code>kirograph_data_search</code></td><td>~10,000 tokens</td><td>~200–500 tokens</td><td>95–98%</td></tr>
+          <tr><td><code>kirograph_data_list</code></td><td>~2,000 tokens</td><td>~200–400 tokens</td><td>80–90%</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── Caveman Mode ── -->
+    <h2 id="caveman-mode">Caveman Mode</h2>
+
+    <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/caveman.png" alt="Caveman mode" style="border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem; max-width: 100%;">
+
+    <p>Caveman mode compresses the agent's communication style, cutting token usage on responses without affecting tool calls or code output. Inspired by <a href="https://github.com/JuliusBrussee/caveman" target="_blank" rel="noopener">caveman</a> by JuliusBrussee.</p>
+
+    <p>The rules are injected at session start via the steering file (IDE) and the inline agent prompt (kiro-cli), so they're always in context with no extra tool calls.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Mode</th><th>Style</th></tr></thead>
+        <tbody>
+          <tr><td><code>off</code></td><td>Normal responses <em>(default)</em></td></tr>
+          <tr><td><code>lite</code></td><td>Compact, no filler, full sentences</td></tr>
+          <tr><td><code>full</code></td><td>Fragments, no articles, short synonyms</td></tr>
+          <tr><td><code>ultra</code></td><td>Maximum compression, abbreviations, → for causality</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Caveman mode never touches code blocks, file paths, URLs, or technical terms, only prose.</p>
+
+    <p><strong>Auto-clarity exceptions:</strong> the agent temporarily reverts to normal prose for security warnings, confirmations of irreversible actions (delete, overwrite, force-push), and multi-step sequences where fragment order could cause misunderstanding. Compressed style resumes immediately after.</p>
+
+    <pre><code>kirograph caveman lite    # set mode
+kirograph caveman         # show current mode</code></pre>
+
+    <div class="callout">
+      Takes effect on the <strong>next agent session</strong>. The steering file and CLI agent config are regenerated immediately when you run the command.
+    </div>
+
+    <!-- ── Shell Compression ── -->
+    <h2 id="shell-compression">Shell Compression</h2>
+
+    <img src="https://raw.githubusercontent.com/davide-desio-eleva/kirograph/main/assets/rtk.png" alt="shell compression mode" style="border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 1.5rem; max-width: 100%;">
+
+    <p>KiroGraph includes a built-in shell compression engine inspired by <a href="https://github.com/rtk-ai/rtk" target="_blank" rel="noopener">rtk</a>. The <code>kirograph_exec</code> MCP tool runs shell commands and returns token-optimized output, saving 60-90% of tokens on verbose commands.</p>
+
+    <p>Supported command families: <strong>git</strong> (status, log, diff, push, pull, commit, add, fetch, branch), <strong>GitHub CLI</strong> (gh pr list/view, gh issue list, gh run list), <strong>test runners</strong> (jest, vitest, pytest, cargo test, go test, rspec, minitest, playwright), <strong>linters/build</strong> (eslint, tsc, ruff, clippy, cargo build, prettier, biome, golangci-lint, rubocop, next build), <strong>file listings</strong> (ls, find, tree), <strong>search</strong> (grep, rg, grouped by file), <strong>diff</strong> (condensed context), <strong>docker/k8s</strong> (docker ps, images, logs, compose ps, kubectl pods, logs, services), <strong>package managers</strong> (npm, pip, bundle, prisma generate), <strong>AWS</strong> (sts, ec2, lambda, logs, cloudformation, dynamodb, iam, s3, ecs, sqs, sns), <strong>network</strong> (curl, wget, strips progress).</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Level</th><th>Style</th></tr></thead>
+        <tbody>
+          <tr><td><code>normal</code></td><td>Balanced: removes noise, keeps structure (default)</td></tr>
+          <tr><td><code>aggressive</code></td><td>More compact: groups by category, limits output</td></tr>
+          <tr><td><code>ultra</code></td><td>Maximum compression: counts and summaries only</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <pre><code>kirograph compression normal     # balanced (default)
+kirograph compression aggressive # more compact
+kirograph compression ultra      # maximum compression
+kirograph compression off        # disable hook (tool still available)
+kirograph compression            # show current level
+kirograph gain                   # show token savings stats
+kirograph gain --graph           # ASCII graph (last 30 days)</code></pre>
+
+    <p>Set during <code>kirograph install</code> (interactive arrow-key menu) or any time after. The configured level is used as the default when the agent calls <code>kirograph_exec</code> without specifying one explicitly.</p>
+
+    <p><strong>Error preservation:</strong> Failed commands always show full diagnostic output regardless of compression level.</p>
+
+    <div class="callout">
+      Configure in <code>.kirograph/config.json</code>: <code>"shellCompressionLevel": "normal"</code> (default). Set to <code>"off"</code> to disable the hook and steering section. The <code>kirograph_exec</code> tool remains available regardless.
+    </div>
+
+    <h3 id="compression-caveman">Coexistence with Caveman Mode</h3>
+    <p>Compression and caveman mode are complementary, they compress different things:</p>
+    <ul>
+      <li><strong>Caveman mode</strong> compresses the agent's <em>prose responses</em> (the text it writes around tool results). It never touches code or tool output.</li>
+      <li><strong>Shell compression compresses <em>shell command output</em> (the raw data coming back from shell commands). It never touches how the agent communicates.</li>
+    </ul>
+    <p>They stack: with both enabled, shell commands return 60-90% fewer tokens <em>and</em> the agent's explanations around those results are also shorter. Pick both independently during <code>kirograph install</code>. The "ultra + ultra" combo gives maximum token savings on both fronts.</p>
+
+    <h2 id="savings-heuristics">Savings Heuristics</h2>
+    <p><code>kirograph gain</code> tracks two types of savings: compression (measured exactly) and graph tools (estimated via heuristics). For graph tools, the system estimates what the agent <em>would have spent</em> doing the same work without KiroGraph:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>What the agent would do manually</th><th>Estimated naive cost</th></tr></thead>
+        <tbody>
+          <tr><td><code>kirograph_context</code></td><td>Read 5-10 files to orient on a task</td><td>~7,500-15,000 tokens</td></tr>
+          <tr><td><code>kirograph_search</code></td><td>Run grep + read top matches</td><td>~3,300 tokens</td></tr>
+          <tr><td><code>kirograph_callers</code></td><td>Grep for symbol + read each calling file</td><td>~8,300 tokens</td></tr>
+          <tr><td><code>kirograph_callees</code></td><td>Read function body + grep for each call</td><td>~3,900 tokens</td></tr>
+          <tr><td><code>kirograph_impact</code></td><td>Recursive grep + read per depth level</td><td>~6,900 &times; depth</td></tr>
+          <tr><td><code>kirograph_node</code></td><td>Read the full file containing the symbol</td><td>~1,500 tokens</td></tr>
+          <tr><td><code>kirograph_files</code></td><td>Run <code>find</code> or <code>ls -R</code></td><td>~2,000 tokens</td></tr>
+          <tr><td><code>kirograph_path</code></td><td>Trace connections (multiple grep + read)</td><td>~7,700 tokens</td></tr>
+          <tr><td><code>kirograph_type_hierarchy</code></td><td>Grep for extends/implements + read each file</td><td>~5,400 tokens</td></tr>
+          <tr><td><code>kirograph_dead_code</code></td><td>Not feasible manually (read every file)</td><td>5&times; output, min 15,000</td></tr>
+          <tr><td><code>kirograph_hotspots</code></td><td>Not feasible manually (count edges for every symbol)</td><td>5&times; output, min 15,000</td></tr>
+          <tr><td><code>kirograph_architecture</code></td><td>Not feasible manually</td><td>4&times; output, min 7,500</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Constants: 1,500 tokens per average source file (~200 lines), 800 tokens per grep result set, 2,000 tokens per directory listing. These are conservative estimates; in practice agents often read more files, retry failed searches, and explore dead ends.</p>
+
+    <!-- ── Credits ── -->
+    <h2 id="credits">Credits</h2>
+
+    <h3 id="credits-origin">Original idea</h3>
+    <p>KiroGraph is inspired by <a href="https://github.com/colbymchenry/codegraph" target="_blank" rel="noopener">CodeGraph</a> by <a href="https://www.linkedin.com/in/colby-mchenry/" target="_blank" rel="noopener">Colby McHenry</a>. The original concept of building a semantic code graph for AI coding agents comes from his work.</p>
+
+    <h3 id="credits-inspirations">Inspirations</h3>
+    <ul>
+      <li><a href="https://github.com/JuliusBrussee/cavemem" target="_blank" rel="noopener">cavemem</a> by <a href="https://www.linkedin.com/in/julius-brussee/" target="_blank" rel="noopener">Julius Brussee</a>: the memory module's hook-based observation capture, deterministic compression, and SQLite storage pattern.</li>
+      <li><a href="https://github.com/jgravelle/jdocmunch-mcp" target="_blank" rel="noopener">jDocMunch-MCP</a> by <a href="https://www.linkedin.com/in/j-gravelle-2778223/" target="_blank" rel="noopener">J. Gravelle</a>: the documentation module's section-first retrieval approach, stable section IDs, and byte-offset addressing.</li>
+    </ul>
+
+    <h3 id="credits-contributors">Contributors</h3>
+    <ul>
+      <li><a href="https://www.linkedin.com/in/alessandrofranceschi/" target="_blank" rel="noopener">Alessandro Franceschi</a>: Claude Code and Codex integration, Elixir/Phoenix language and framework support.</li>
+      <li><a href="https://www.linkedin.com/in/argomauro/" target="_blank" rel="noopener">Mauro Argo</a>: original idea for the architecture layer analysis feature.</li>
+    </ul>
+
+    <h3 id="credits-stargazers">Stargazers & Community</h3>
+    <p>Thank you to everyone who contributed and starred the project on GitHub.</p>
+
+    <!-- Badges -->
+    <div style="margin-top: 1rem; display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+      <a href="https://github.com/davide-desio-eleva/kirograph/stargazers" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card); color: var(--text); text-decoration: none; font-size: 0.85rem; transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <svg viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; color: var(--yellow);">
+          <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"/>
+        </svg>
+        <span id="docs-star-count">—</span> stars
+      </a>
+      <a href="https://github.com/davide-desio-eleva/kirograph/network/members" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card); color: var(--text); text-decoration: none; font-size: 0.85rem; transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <svg viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; color: var(--text-muted);">
+          <path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75v-.878a2.25 2.25 0 111.5 0v.878a2.25 2.25 0 01-2.25 2.25h-1.5v2.128a2.251 2.251 0 11-1.5 0V8.5h-1.5A2.25 2.25 0 013.5 6.25v-.878a2.25 2.25 0 111.5 0zM5 3.25a.75.75 0 10-1.5 0 .75.75 0 001.5 0zm6.75.75a.75.75 0 10 0-1.5.75.75 0 000 1.5zM8 12.75a.75.75 0 10 0-1.5.75.75 0 000 1.5z"/>
+        </svg>
+        <span id="docs-fork-count">—</span> forks
+      </a>
+      <a href="https://github.com/davide-desio-eleva/kirograph/graphs/contributors" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card); color: var(--text); text-decoration: none; font-size: 0.85rem; transition: border-color 0.2s;" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <svg viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; color: var(--accent);">
+          <path d="M2 5.5a3.5 3.5 0 115.898 2.549 5.508 5.508 0 013.034 4.084.75.75 0 11-1.482.235 4.001 4.001 0 00-6.9 0 .75.75 0 01-1.482-.236A5.507 5.507 0 013.102 8.05 3.49 3.49 0 012 5.5zM11 4a.75.75 0 100 1.5 1.5 1.5 0 01.666 2.844.75.75 0 00-.416.672v.352a.75.75 0 00.574.73c1.2.289 2.162 1.2 2.522 2.372a.75.75 0 101.434-.44 5.01 5.01 0 00-2.56-3.012A3 3 0 0011 4z"/>
+        </svg>
+        <span id="docs-contributor-count">—</span> contributors
+      </a>
+    </div>
+
+    <!-- Avatar carousel -->
+    <div style="margin-top: 1rem;">
+      <div id="docs-avatar-carousel" style="position: relative; max-width: 100%; overflow: hidden; mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);">
+        <div id="docs-avatar-track" style="display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem 0; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; scroll-behavior: smooth;">
+        </div>
+      </div>
+    </div>
+
+    <script>
+    (function() {
+      var REPO = 'davide-desio-eleva/kirograph';
+      var track = document.getElementById('docs-avatar-track');
+
+      fetch('https://api.github.com/repos/' + REPO)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.stargazers_count !== undefined) document.getElementById('docs-star-count').textContent = data.stargazers_count;
+          if (data.forks_count !== undefined) document.getElementById('docs-fork-count').textContent = data.forks_count;
+        }).catch(function() {});
+
+      function makeAvatar(user, isContributor) {
+        var a = document.createElement('a');
+        a.href = 'https://github.com/' + user.login;
+        a.target = '_blank'; a.rel = 'noopener';
+        a.title = user.login + (isContributor ? ' (contributor)' : '');
+        a.style.cssText = 'flex-shrink:0; display:block;';
+        var img = document.createElement('img');
+        img.src = user.avatar_url + '&s=64';
+        img.alt = user.login; img.loading = 'lazy';
+        img.style.cssText = 'width:36px; height:36px; border-radius:50%; border:2px solid ' + (isContributor ? 'var(--accent)' : 'var(--border)') + '; transition: border-color 0.2s, transform 0.2s;';
+        img.onmouseover = function() { this.style.transform='scale(1.15)'; this.style.borderColor='var(--accent)'; };
+        img.onmouseout = function() { this.style.transform='scale(1)'; this.style.borderColor=isContributor?'var(--accent)':'var(--border)'; };
+        a.appendChild(img);
+        return a;
+      }
+
+      fetch('https://api.github.com/repos/' + REPO + '/contributors?per_page=30')
+        .then(function(r) { return r.json(); })
+        .then(function(contributors) {
+          if (!Array.isArray(contributors)) return;
+          var logins = new Set(); var count = 0;
+          contributors.forEach(function(u) { if (u.type==='Bot') return; count++; logins.add(u.login); track.appendChild(makeAvatar(u, true)); });
+          document.getElementById('docs-contributor-count').textContent = count;
+          return fetch('https://api.github.com/repos/' + REPO + '/stargazers?per_page=100')
+            .then(function(r) { return r.json(); })
+            .then(function(stargazers) {
+              if (!Array.isArray(stargazers)) return;
+              stargazers.forEach(function(u) { if (logins.has(u.login)) return; track.appendChild(makeAvatar(u, false)); });
+            });
+        }).catch(function() {});
+
+      var scrollDir = 1, paused = false;
+      track.addEventListener('mouseenter', function() { paused = true; });
+      track.addEventListener('mouseleave', function() { paused = false; });
+      function autoScroll() {
+        if (!paused && track.scrollWidth > track.clientWidth) {
+          track.scrollLeft += 0.5 * scrollDir;
+          if (track.scrollLeft >= track.scrollWidth - track.clientWidth - 1) scrollDir = -1;
+          if (track.scrollLeft <= 0) scrollDir = 1;
+        }
+        requestAnimationFrame(autoScroll);
+      }
+      requestAnimationFrame(autoScroll);
+    })();
+    </script>
+    <style>#docs-avatar-track::-webkit-scrollbar { display: none; }</style>
+
+  </main>
+
+  <!-- Right sidebar (dynamic subtitles) -->
+  <aside class="docs-sidebar docs-sidebar-right" id="toc-right">
+    <div class="sidebar-section">
+      <div class="sidebar-heading" id="toc-right-heading">On this page</div>
+      <div id="toc-right-links"></div>
+    </div>
+  </aside>
+
+</div>
+
+<!-- ── Footer ── -->
+<footer class="footer">
+  <p>
+    KiroGraph ·
+    <a href="index.html">Home</a> ·
+    <a href="changelog.html">Changelog</a> ·
+    <a href="https://github.com/davide-desio-eleva/kirograph" target="_blank" rel="noopener">GitHub</a>
+  </p>
+</footer>
+
+<script>
+(function() {
+  const main = document.getElementById('docs-main');
+  const leftLinks = document.querySelectorAll('#sidebar .sidebar-link[href^="#"]');
+  const tocRight = document.getElementById('toc-right-links');
+  const tocHeading = document.getElementById('toc-right-heading');
+
+  // Build a map of h2 sections → their h3 children
+  const sections = {};
+  const h2s = main.querySelectorAll('h2[id]');
+  h2s.forEach((h2, i) => {
+    const nextH2 = h2s[i + 1];
+    const h3s = [];
+    let el = h2.nextElementSibling;
+    while (el && el !== nextH2) {
+      if (el.tagName === 'H3' && el.id) {
+        h3s.push({ id: el.id, text: el.textContent.trim() });
+      }
+      el = el.nextElementSibling;
+    }
+    sections[h2.id] = { title: h2.textContent.trim(), h3s };
+  });
+
+  // Track current active h2 and update right sidebar
+  let currentH2 = null;
+
+  function updateRightSidebar(h2Id) {
+    if (h2Id === currentH2) return;
+    currentH2 = h2Id;
+
+    const section = sections[h2Id];
+    tocRight.innerHTML = '';
+
+    if (!section || section.h3s.length === 0) {
+      tocHeading.textContent = 'On this page';
+      document.getElementById('toc-right').style.display = 'none';
+      return;
+    }
+
+    document.getElementById('toc-right').style.display = '';
+    tocHeading.textContent = section.title;
+    section.h3s.forEach(h3 => {
+      const a = document.createElement('a');
+      a.href = '#' + h3.id;
+      a.className = 'sidebar-link';
+      a.textContent = h3.text;
+      tocRight.appendChild(a);
+    });
+  }
+
+  // Scroll spy for left sidebar + right sidebar updates
+  function onScroll() {
+    let activeH2 = '';
+    let activeH3 = '';
+
+    h2s.forEach(h2 => {
+      if (h2.getBoundingClientRect().top <= 120) activeH2 = h2.id;
+    });
+
+    // Find active h3 within current section
+    if (activeH2 && sections[activeH2]) {
+      sections[activeH2].h3s.forEach(h3 => {
+        const el = document.getElementById(h3.id);
+        if (el && el.getBoundingClientRect().top <= 120) activeH3 = h3.id;
+      });
+    }
+
+    // Update left sidebar
+    leftLinks.forEach(l => {
+      l.classList.toggle('active', l.getAttribute('href') === '#' + activeH2);
+    });
+
+    // Update right sidebar content
+    updateRightSidebar(activeH2);
+
+    // Highlight active h3 in right sidebar
+    const rightLinks = tocRight.querySelectorAll('.sidebar-link');
+    rightLinks.forEach(l => {
+      l.classList.toggle('active', l.getAttribute('href') === '#' + activeH3);
+    });
+  }
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
+</script>
+
+</body>
+</html>
