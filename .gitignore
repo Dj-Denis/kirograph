@@ -6,6 +6,7 @@ dist/
 
 # kiro
 .kirograph/
+kirograph-graph.html
 .kiro
 
 # claude

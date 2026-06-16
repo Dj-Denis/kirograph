@@ -1,7 +1,7 @@
 {
   "name": "kirograph",
-  "version": "0.10.0",
-  "description": "Semantic code knowledge graph for Kiro — fewer tool calls, instant symbol lookups, 100% local.",
+  "version": "0.17.0",
+  "description": "Semantic code knowledge graph for Kiro: fewer tool calls, instant symbol lookups, 100% local.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -17,7 +17,9 @@
     "dev": "tsx scripts/build.ts --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
-    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "release": "./scripts/release.sh",
+    "docs": "npx serve docs"
   },
   "keywords": [
     "kiro",
@@ -34,9 +36,11 @@
     "node-addon-api": "^8.7.0",
     "node-gyp": "^11.5.0",
     "node-sqlite3-wasm": "^0.8.30",
+    "parquetjs-lite": "^0.8.7",
     "picomatch": "^4.0.3",
     "tree-sitter-wasms": "^0.1.11",
-    "web-tree-sitter": "^0.25.3"
+    "web-tree-sitter": "^0.25.3",
+    "xlsx": "^0.18.5"
   },
   "optionalDependencies": {
     "@electric-sql/pglite": "^0.2.17",
@@ -47,7 +51,7 @@
     "better-sqlite3": "^11.10.0",
     "qdrant-local": "^0.0.0-alpha.10",
     "sqlite-vec": "^0.1.9",
-    "typesense": "^3.0.0"
+    "typesense": "^3.0.6"
   },
   "devDependencies": {
     "@types/figlet": "^1.7.0",

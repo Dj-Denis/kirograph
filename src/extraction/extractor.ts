@@ -9,12 +9,12 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import type { Node, Edge, NodeKind, Language } from '../types';
 import { detectLanguage, isSupportedLanguage } from './languages';
-import { initGrammars, getParser } from './grammars';
+import { initGrammars, getParser, hasWasmGrammar } from './grammars';
 
 export interface UnresolvedRef {
   sourceId: string;
   refName: string;
-  refKind: 'function' | 'import';
+  refKind: 'function' | 'import' | 'extends' | 'implements';
   line: number;
   column: number;
 }
@@ -76,16 +76,20 @@ export async function extractFile(filePath: string, projectRoot: string, content
   await initGrammars();
   const parser = await getParser(language);
   if (!parser) {
-    // Pascal, Liquid, or missing grammar — track file but no AST extraction
-    return {
-      filePath: relPath,
-      language,
-      contentHash,
-      fileSize,
-      nodes: [],
-      edges: [],
-      unresolvedRefs: [],
-    };
+    if (!hasWasmGrammar(language)) {
+      // Language genuinely has no grammar (e.g. Liquid, unknown) — track file but no AST extraction
+      return {
+        filePath: relPath,
+        language,
+        contentHash,
+        fileSize,
+        nodes: [],
+        edges: [],
+        unresolvedRefs: [],
+      };
+    }
+    // Grammar should exist but parser failed (likely WASM crash) — signal extraction failure
+    throw new Error(`Parser unavailable for ${language} (WASM grammar exists but failed to load)`);
   }
 
   const tree = parser.parse(source);
@@ -98,6 +102,131 @@ export async function extractFile(filePath: string, projectRoot: string, content
   walkTree(tree.rootNode, source, relPath, language, nodes, edges, unresolvedRefs, now);
 
   return { filePath: relPath, language, contentHash, fileSize, nodes, edges, unresolvedRefs };
+}
+
+// ── Elixir helpers ────────────────────────────────────────────────────────────
+
+const ELIXIR_DEF_KINDS: Record<string, NodeKind> = {
+  defmodule: 'module',
+  def: 'function',
+  defp: 'function',
+  defmacro: 'function',
+  defmacrop: 'function',
+  defprotocol: 'interface',
+  defimpl: 'class',
+  defstruct: 'struct',
+};
+
+const ELIXIR_IMPORT_TARGETS = new Set(['alias', 'import', 'require', 'use']);
+
+function elixirCallTarget(node: any, source: string): string | null {
+  const target = node.childForFieldName?.('target') ?? node.child(0);
+  if (!target) return null;
+  return source.slice(target.startIndex, target.endIndex).trim() || null;
+}
+
+function elixirFirstArg(node: any): any | null {
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child.type === 'arguments') {
+      return child.namedChild(0) ?? child.child(0) ?? null;
+    }
+  }
+  return null;
+}
+
+function extractElixirName(node: any, source: string, kind: NodeKind): string | null {
+  const firstArg = elixirFirstArg(node);
+  if (!firstArg) return null;
+  if (kind === 'module' || kind === 'interface' || kind === 'class') {
+    return source.slice(firstArg.startIndex, firstArg.endIndex).trim();
+  }
+  if (kind === 'function') {
+    if (firstArg.type === 'call') {
+      const nameNode = firstArg.childForFieldName?.('target') ?? firstArg.child(0);
+      if (nameNode) return source.slice(nameNode.startIndex, nameNode.endIndex).trim();
+    }
+    return source.slice(firstArg.startIndex, firstArg.endIndex).trim();
+  }
+  return null;
+}
+
+function extractElixirImportSource(node: any, source: string): string | null {
+  const firstArg = elixirFirstArg(node);
+  if (!firstArg) return null;
+  return source.slice(firstArg.startIndex, firstArg.endIndex).trim() || null;
+}
+
+function walkElixirCall(
+  node: any,
+  source: string,
+  filePath: string,
+  language: Language,
+  nodes: Node[],
+  edges: Edge[],
+  unresolvedRefs: UnresolvedRef[],
+  now: number,
+  parentId?: string
+): void {
+  const targetText = elixirCallTarget(node, source);
+  if (!targetText) {
+    for (let i = 0; i < node.childCount; i++) {
+      walkTree(node.child(i), source, filePath, language, nodes, edges, unresolvedRefs, now, parentId);
+    }
+    return;
+  }
+
+  if (ELIXIR_IMPORT_TARGETS.has(targetText)) {
+    const modPath = extractElixirImportSource(node, source);
+    if (modPath) {
+      const id = makeNodeId(filePath, 'import', modPath, node.startPosition.row + 1);
+      nodes.push({
+        id, kind: 'import', name: modPath,
+        qualifiedName: `${filePath}::import:${modPath}`,
+        filePath, language,
+        startLine: node.startPosition.row + 1,
+        endLine: node.endPosition.row + 1,
+        startColumn: node.startPosition.column,
+        endColumn: node.endPosition.column,
+        updatedAt: now,
+      });
+      unresolvedRefs.push({ sourceId: id, refName: modPath, refKind: 'import', line: node.startPosition.row + 1, column: node.startPosition.column });
+    }
+    return;
+  }
+
+  const defKind = ELIXIR_DEF_KINDS[targetText];
+  if (defKind) {
+    const name = extractElixirName(node, source, defKind);
+    if (name) {
+      const id = makeNodeId(filePath, defKind, name, node.startPosition.row + 1);
+      const isPrivate = targetText === 'defp' || targetText === 'defmacrop';
+      nodes.push({
+        id, kind: defKind, name,
+        qualifiedName: `${filePath}::${name}`,
+        filePath, language,
+        startLine: node.startPosition.row + 1,
+        endLine: node.endPosition.row + 1,
+        startColumn: node.startPosition.column,
+        endColumn: node.endPosition.column,
+        docstring: extractDocstring(node, source),
+        signature: extractSignature(node, source, defKind),
+        visibility: isPrivate ? 'private' : 'public',
+        isExported: !isPrivate,
+        updatedAt: now,
+      });
+      if (parentId) edges.push({ source: parentId, target: id, kind: 'contains' });
+      collectCallRefs(node, source, id, unresolvedRefs);
+      for (let i = 0; i < node.childCount; i++) {
+        walkTree(node.child(i), source, filePath, language, nodes, edges, unresolvedRefs, now, id);
+      }
+      return;
+    }
+  }
+
+  for (let i = 0; i < node.childCount; i++) {
+    walkTree(node.child(i), source, filePath, language, nodes, edges, unresolvedRefs, now, parentId);
+  }
 }
 
 // ── Node type mappings ────────────────────────────────────────────────────────
@@ -113,7 +242,7 @@ const KIND_MAP: Record<string, NodeKind> = {
   function_declaration: 'function',
   function_expression: 'function',
   arrow_function: 'function',
-  function_definition: 'function',    // Python
+  function_definition: 'function',    // Python, Scala
   function_item: 'function',          // Rust
   function_declaration_go: 'function',
   // Methods
@@ -123,12 +252,14 @@ const KIND_MAP: Record<string, NodeKind> = {
   // Classes / structs
   class_declaration: 'class',
   class_expression: 'class',
-  class_definition: 'class',          // Python
+  class_definition: 'class',          // Python, Scala
   impl_item: 'class',                 // Rust (impl blocks)
   struct_item: 'struct',              // Rust
+  struct_definition: 'struct',        // Zig
   // Interfaces / traits
   interface_declaration: 'interface',
   trait_item: 'trait',                // Rust
+  trait_definition: 'trait',          // Scala
   protocol_declaration: 'interface',  // Swift
   // Enums
   enum_declaration: 'enum',
@@ -141,6 +272,7 @@ const KIND_MAP: Record<string, NodeKind> = {
   type_alias: 'type_alias',           // Kotlin
   // Namespaces / modules
   namespace_declaration: 'namespace',
+  module_definition: 'namespace',     // OCaml
   // Variables / constants (language-specific, see extractVariableKind)
   lexical_declaration: 'variable',    // TS/JS (const/let/var) — refined below
   variable_declaration: 'variable',   // TS/JS (var)
@@ -187,6 +319,12 @@ function walkTree(
     for (let i = 0; i < node.childCount; i++) {
       walkTree(node.child(i), source, filePath, language, nodes, edges, unresolvedRefs, now, parentId);
     }
+    return;
+  }
+
+  // Elixir: all definitions and imports are `call` nodes
+  if (language === 'elixir' && node.type === 'call') {
+    walkElixirCall(node, source, filePath, language, nodes, edges, unresolvedRefs, now, parentId);
     return;
   }
 
@@ -239,6 +377,11 @@ function walkTree(
 
       // Collect call references within this symbol
       collectCallRefs(node, source, id, unresolvedRefs);
+
+      // Extract inheritance edges for C# and Java class/interface nodes
+      if ((kind === 'class' || kind === 'interface') && (language === 'csharp' || language === 'java')) {
+        extractInheritance(node, source, language, id, unresolvedRefs);
+      }
 
       // Recurse with this node as parent
       for (let i = 0; i < node.childCount; i++) {
@@ -295,6 +438,63 @@ function getLanguageSpecificKind(type: string, lang: Language): NodeKind | null 
       break;
     case 'ruby':
       if (type === 'singleton_method') return 'method';
+      break;
+    case 'scala':
+      if (type === 'object_definition') return 'class';
+      if (type === 'val_definition') return 'variable';
+      if (type === 'var_definition') return 'variable';
+      if (type === 'type_definition') return 'type_alias';
+      break;
+    case 'lua':
+      if (type === 'local_function') return 'function';
+      if (type === 'local_variable_declaration') return 'variable';
+      if (type === 'variable_assignment') return 'variable';
+      break;
+    case 'zig':
+      if (type === 'VarDecl') return 'variable';
+      if (type === 'ContainerDecl') return 'struct';
+      break;
+    case 'bash':
+      if (type === 'variable_assignment') return 'variable';
+      break;
+    case 'ocaml':
+      if (type === 'let_binding') return 'variable';
+      if (type === 'type_binding') return 'type_alias';
+      if (type === 'module_binding') return 'namespace';
+      break;
+    case 'elm':
+      if (type === 'function_declaration_left') return 'function';
+      if (type === 'type_alias_declaration') return 'type_alias';
+      break;
+    case 'solidity':
+      if (type === 'contract_declaration') return 'class';
+      if (type === 'event_definition') return 'function';
+      if (type === 'modifier_definition') return 'function';
+      if (type === 'state_variable_declaration') return 'variable';
+      break;
+    case 'objc':
+      if (type === 'class_interface') return 'class';
+      if (type === 'class_implementation') return 'class';
+      if (type === 'protocol_declaration') return 'interface';
+      if (type === 'method_declaration') return 'method';
+      if (type === 'property_declaration') return 'property';
+      break;
+    case 'hcl':
+      if (type === 'block') return 'namespace';
+      if (type === 'attribute') return 'variable';
+      break;
+    case 'scss':
+      if (type === 'mixin_statement') return 'function';
+      if (type === 'function_statement') return 'function';
+      if (type === 'variable_declaration') return 'variable';
+      if (type === 'include_statement') return 'import';
+      if (type === 'use_statement') return 'import';
+      if (type === 'forward_statement') return 'import';
+      if (type === 'placeholder') return 'class';
+      break;
+    case 'css':
+      if (type === 'rule_set') return 'class';
+      if (type === 'declaration') return 'variable';
       break;
   }
   return null;
@@ -637,31 +837,158 @@ function isStatic(node: any): boolean {
 
 // ── Call reference collection ─────────────────────────────────────────────────
 
+/**
+ * Node types that represent a function/method call across all supported languages.
+ * Using a combined set avoids threading a language parameter through the recursive walker.
+ */
+const CALL_NODE_TYPES = new Set([
+  'call_expression',          // JS/TS/Go/Rust/Swift/Kotlin/Dart/C/C++
+  'invocation_expression',    // C#
+  'method_invocation',        // Java
+  'call',                     // Python/Ruby/Elixir (function calls in bodies)
+  'function_call_expression', // PHP
+]);
+
+/**
+ * Extract the callee name from a call node.
+ * Uses named field lookup first (more precise), then falls back to first-child heuristic.
+ */
+function extractCallName(node: any, source: string): string | null {
+  // Named fields — Java uses 'name', Python/Ruby use 'function'/'method', Elixir uses 'target'
+  for (const field of ['name', 'method', 'function', 'target']) {
+    const f = node.childForFieldName?.(field);
+    if (f) {
+      const t = f.type;
+      if (t === 'identifier' || t === 'name' || t === 'property_identifier' || t === 'type_identifier') {
+        const text = source.slice(f.startIndex, f.endIndex).trim();
+        if (text && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(text)) return text;
+      }
+    }
+  }
+  // Fallback: first child, take final segment of dotted access (covers JS/TS, C#, Go, Rust…)
+  const funcNode = node.child(0);
+  if (funcNode) {
+    const rawName = source.slice(funcNode.startIndex, funcNode.endIndex).split('(')[0].trim();
+    if (rawName && rawName.length < 100) {
+      const calleeName = rawName.split('.').pop()!.trim();
+      if (calleeName && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(calleeName)) return calleeName;
+    }
+  }
+  return null;
+}
+
 function collectCallRefs(node: any, source: string, sourceId: string, unresolvedRefs: UnresolvedRef[]): void {
   walkForCalls(node, source, sourceId, unresolvedRefs);
 }
 
 function walkForCalls(node: any, source: string, sourceId: string, unresolvedRefs: UnresolvedRef[]): void {
-  if (node.type === 'call_expression') {
-    const funcNode = node.child(0);
-    if (funcNode) {
-      const rawName = source.slice(funcNode.startIndex, funcNode.endIndex).split('(')[0].trim();
-      if (rawName && rawName.length < 100) {
-        // Use only the final segment of dotted/chained calls (e.g., "a.b.c()" → "c")
-        const calleeName = rawName.split('.').pop()!.trim();
-        if (calleeName && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(calleeName)) {
-          unresolvedRefs.push({
-            sourceId,
-            refName: calleeName,
-            refKind: 'function',
-            line: node.startPosition.row + 1,
-            column: node.startPosition.column,
-          });
-        }
-      }
+  if (CALL_NODE_TYPES.has(node.type)) {
+    const calleeName = extractCallName(node, source);
+    if (calleeName) {
+      unresolvedRefs.push({
+        sourceId,
+        refName: calleeName,
+        refKind: 'function',
+        line: node.startPosition.row + 1,
+        column: node.startPosition.column,
+      });
     }
   }
   for (let i = 0; i < node.childCount; i++) {
     walkForCalls(node.child(i), source, sourceId, unresolvedRefs);
+  }
+}
+
+// ── Inheritance extraction ────────────────────────────────────────────────────
+
+/**
+ * Extract the simple type name from an AST node representing a type reference.
+ * Strips generic parameters (e.g. "List<T>" → "List").
+ */
+function extractTypeName(node: any, source: string): string | null {
+  const t = node.type;
+  if (t === 'identifier' || t === 'type_identifier' || t === 'name') {
+    return source.slice(node.startIndex, node.endIndex).trim() || null;
+  }
+  // qualified_name / generic_name: take the rightmost identifier
+  if (t === 'qualified_name' || t === 'generic_name' || t === 'scoped_type_identifier') {
+    for (let i = node.childCount - 1; i >= 0; i--) {
+      const child = node.child(i);
+      if (child.type === 'identifier' || child.type === 'type_identifier' || child.type === 'name') {
+        return source.slice(child.startIndex, child.endIndex).trim() || null;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Scan a class/interface AST node for its base types and add them as unresolved
+ * extends/implements refs, which the resolver later turns into graph edges.
+ *
+ * C#:  base_list  children → all are either base class or interface (can't distinguish without types)
+ * Java: superclass → extends; super_interfaces / extends_interfaces → implements / extends
+ */
+function extractInheritance(
+  node: any,
+  source: string,
+  language: Language,
+  classNodeId: string,
+  unresolvedRefs: UnresolvedRef[],
+): void {
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+
+    if (language === 'csharp' && child.type === 'base_list') {
+      for (let j = 0; j < child.childCount; j++) {
+        const item = child.child(j);
+        const name = extractTypeName(item, source);
+        if (name) {
+          unresolvedRefs.push({
+            sourceId: classNodeId,
+            refName: name,
+            // In C# both classes and interfaces appear in the same base_list;
+            // we emit 'extends' for all — the resolver maps it to the extends edge
+            // which covers both parent classes and parent interfaces structurally.
+            refKind: 'extends',
+            line: item.startPosition.row + 1,
+            column: item.startPosition.column,
+          });
+        }
+      }
+    }
+
+    if (language === 'java') {
+      if (child.type === 'superclass') {
+        // superclass has a single type_identifier or scoped_type_identifier child
+        const typeNode = child.namedChild?.(0);
+        if (typeNode) {
+          const name = extractTypeName(typeNode, source);
+          if (name) unresolvedRefs.push({ sourceId: classNodeId, refName: name, refKind: 'extends', line: child.startPosition.row + 1, column: child.startPosition.column });
+        }
+      }
+      if (child.type === 'super_interfaces' || child.type === 'extends_interfaces') {
+        // contains a type_list with one or more types
+        const typeList = child.namedChild?.(0);
+        if (typeList) {
+          const count = typeList.namedChildCount ?? 0;
+          for (let j = 0; j < count; j++) {
+            const typeNode = typeList.namedChild(j);
+            if (typeNode) {
+              const name = extractTypeName(typeNode, source);
+              if (name) {
+                unresolvedRefs.push({
+                  sourceId: classNodeId,
+                  refName: name,
+                  refKind: child.type === 'extends_interfaces' ? 'extends' : 'implements',
+                  line: typeNode.startPosition.row + 1,
+                  column: typeNode.startPosition.column,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }

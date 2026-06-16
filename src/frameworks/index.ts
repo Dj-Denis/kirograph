@@ -28,6 +28,19 @@ export { rustResolver } from './rust';
 export { aspnetResolver } from './csharp';
 export { swiftUIResolver, uikitResolver, vaporResolver } from './swift';
 export { laravelResolver, FACADE_MAPPINGS } from './laravel';
+export { phoenixResolver } from './elixir';
+export { playResolver } from './scala';
+export { nuxtResolver, vueResolver } from './vue';
+export { solidityResolver } from './solidity';
+export { sstResolver, cdkResolver, serverlessResolver, samResolver } from './iac';
+export { terraformResolver } from './terraform';
+export { pulumiResolver } from './pulumi';
+export { cloudformationResolver } from './cloudformation';
+export { kubernetesResolver } from './kubernetes';
+export { dockerComposeResolver } from './docker';
+export { ansibleResolver } from './ansible';
+export { angularResolver } from './angular';
+export { amplifyResolver } from './amplify';
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 
@@ -42,6 +55,19 @@ import { rustResolver } from './rust';
 import { aspnetResolver } from './csharp';
 import { swiftUIResolver, uikitResolver, vaporResolver } from './swift';
 import { laravelResolver } from './laravel';
+import { phoenixResolver } from './elixir';
+import { playResolver } from './scala';
+import { nuxtResolver, vueResolver } from './vue';
+import { solidityResolver } from './solidity';
+import { sstResolver, cdkResolver, serverlessResolver, samResolver } from './iac';
+import { terraformResolver } from './terraform';
+import { pulumiResolver } from './pulumi';
+import { cloudformationResolver } from './cloudformation';
+import { kubernetesResolver } from './kubernetes';
+import { dockerComposeResolver } from './docker';
+import { ansibleResolver } from './ansible';
+import { angularResolver } from './angular';
+import { amplifyResolver } from './amplify';
 
 const FRAMEWORK_RESOLVERS: FrameworkResolver[] = [
   // PHP
@@ -50,6 +76,10 @@ const FRAMEWORK_RESOLVERS: FrameworkResolver[] = [
   expressResolver,
   reactResolver,
   svelteResolver,
+  angularResolver,
+  // Vue / Nuxt
+  nuxtResolver,
+  vueResolver,
   // Python
   djangoResolver,
   flaskResolver,
@@ -68,6 +98,26 @@ const FRAMEWORK_RESOLVERS: FrameworkResolver[] = [
   swiftUIResolver,
   uikitResolver,
   vaporResolver,
+  // Elixir
+  phoenixResolver,
+  // Scala
+  playResolver,
+  // Solidity
+  solidityResolver,
+  // Infrastructure as Code
+  sstResolver,
+  cdkResolver,
+  serverlessResolver,
+  samResolver,
+  terraformResolver,
+  pulumiResolver,
+  cloudformationResolver,
+  amplifyResolver,
+  // Containers & Orchestration
+  kubernetesResolver,
+  dockerComposeResolver,
+  // Configuration Management
+  ansibleResolver,
 ];
 
 export function getAllFrameworkResolvers(): FrameworkResolver[] {

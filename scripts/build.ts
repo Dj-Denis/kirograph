@@ -8,6 +8,7 @@
  *
  * Asset pipeline runs after transpilation:
  *   - src/db/schema.sql        → dist/db/schema.sql
+ *   - src/db/memory-schema.sql → dist/db/memory-schema.sql
  *   - src/extraction/wasm/*.wasm → dist/extraction/wasm/
  */
 
@@ -20,6 +21,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 const src = path.join(root, 'src');
 const dist = path.join(root, 'dist');
+
+const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
 const isWatch = process.argv.includes('--watch');
 
@@ -44,6 +47,9 @@ function copyAssets(): void {
   // schema.sql
   fs.mkdirSync(path.join(dist, 'db'), { recursive: true });
   fs.copyFileSync(path.join(src, 'db', 'schema.sql'), path.join(dist, 'db', 'schema.sql'));
+  fs.copyFileSync(path.join(src, 'db', 'memory-schema.sql'), path.join(dist, 'db', 'memory-schema.sql'));
+  fs.copyFileSync(path.join(src, 'db', 'docs-schema.sql'), path.join(dist, 'db', 'docs-schema.sql'));
+  fs.copyFileSync(path.join(src, 'db', 'data-schema.sql'), path.join(dist, 'db', 'data-schema.sql'));
 
   // tree-sitter wasm files
   const wasmSrc = path.join(src, 'extraction', 'wasm');
@@ -53,6 +59,15 @@ function copyAssets(): void {
     for (const f of fs.readdirSync(wasmSrc).filter(f => f.endsWith('.wasm'))) {
       fs.copyFileSync(path.join(wasmSrc, f), path.join(wasmDst, f));
     }
+  }
+
+  // logo (used by export command)
+  const assetsSrc = path.join(__dirname, '..', 'assets');
+  const assetsDst = path.join(dist, 'assets');
+  fs.mkdirSync(assetsDst, { recursive: true });
+  const logoSrc = path.join(assetsSrc, 'logo.png');
+  if (fs.existsSync(logoSrc)) {
+    fs.copyFileSync(logoSrc, path.join(assetsDst, 'logo.png'));
   }
 
   console.log('Assets copied.');
@@ -105,6 +120,7 @@ const sharedOptions: esbuild.BuildOptions = {
   packages: 'external',
   sourcemap: true,
   logLevel: 'info',
+  define: { __CLI_VERSION__: JSON.stringify(version) },
   plugins: [fixDynamicImportsPlugin],
 };
 

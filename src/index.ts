@@ -26,7 +26,7 @@ import type { GraphSnapshot, GraphDiff } from './core/snapshot';
 
 export type { GraphSnapshot, GraphDiff };
 import type {
-  Node, NodeKind, IndexResult, IndexProgress, SyncResult, TaskContext,
+  Node, Edge, NodeKind, IndexResult, IndexProgress, SyncResult, TaskContext,
   SearchResult, SearchOptions, NodeContext, NodeMetrics,
 } from './types';
 import type { ArchitectureResult } from './architecture/types';
@@ -106,10 +106,44 @@ export default class KiroGraph {
   markDirty(): void { this.lock.markDirty(); }
   clearDirty(): void { this.lock.clearDirty(); }
   isDirty(): boolean { return this.lock.isDirty(); }
+  isIndexLocked(): boolean { return this.lock.isLocked(); }
 
   async syncIfDirty(): Promise<SyncResult | null> {
     if (!this.isDirty()) return null;
     return this.sync();
+  }
+
+  /**
+   * Returns the number of files that have changed on disk but are not yet
+   * reflected in the index. Used by the MCP status tool to warn the agent
+   * when the index may be stale.
+   */
+  async getPendingSyncCount(): Promise<number> {
+    try {
+      const { getChangedFiles, scanDirectory } = await import('./sync/index');
+      const gitChanged = await getChangedFiles(this.projectRoot, this.config);
+      const hasGitChanges =
+        gitChanged.added.length > 0 ||
+        gitChanged.modified.length > 0 ||
+        gitChanged.removed.length > 0;
+
+      if (hasGitChanges) {
+        return gitChanged.added.length + gitChanged.modified.length + gitChanged.removed.length;
+      }
+
+      // Fallback: compare indexed set vs current filesystem set
+      const indexed = new Set(this.db.getAllFiles().map((f: { path: string }) => f.path));
+      const current = new Set(
+        (await scanDirectory(this.projectRoot, this.config))
+          .map(f => require('path').relative(this.projectRoot, f).replace(/\\/g, '/'))
+      );
+      let pending = 0;
+      for (const p of indexed) { if (!current.has(p)) pending++; }
+      for (const p of current) { if (!indexed.has(p)) pending++; }
+      return pending;
+    } catch {
+      return 0;
+    }
   }
 
   // ── Indexing ───────────────────────────────────────────────────────────────
@@ -118,8 +152,14 @@ export default class KiroGraph {
     return this.pipeline.indexAll(opts);
   }
 
-  async sync(changedFiles?: string[]): Promise<SyncResult> {
-    return this.pipeline.sync(changedFiles);
+  async sync(changedFilesOrOpts?: string[] | { files?: string[]; onProgress?: (p: IndexProgress) => void }): Promise<SyncResult> {
+    if (Array.isArray(changedFilesOrOpts)) {
+      return this.pipeline.sync({ changedFiles: changedFilesOrOpts });
+    }
+    return this.pipeline.sync({
+      changedFiles: changedFilesOrOpts?.files,
+      onProgress: changedFilesOrOpts?.onProgress,
+    });
   }
 
   // ── Symbol search ──────────────────────────────────────────────────────────
@@ -133,6 +173,8 @@ export default class KiroGraph {
   async getCallers(nodeId: string, limit = 30): Promise<Node[]> { return this.queryManager.getCallers(nodeId, limit); }
   async getCallees(nodeId: string, limit = 30): Promise<Node[]> { return this.queryManager.getCallees(nodeId, limit); }
   async getImpactRadius(nodeId: string, depth = 2): Promise<Node[]> { return this.queryManager.getImpactRadius(nodeId, depth); }
+  getAllNodes(): Node[] { return this.db.getAllNodes(); }
+  getAllEdges(): Edge[] { return this.db.getAllEdges(); }
   findDeadCode(limit = 50): Node[] { return this.db.findDeadCode(limit); }
   findCircularDependencies(): string[][] { return this.db.findCircularDependencies(); }
   async findPath(fromId: string, toId: string, maxDepth = 10): Promise<Node[]> { return this.queryManager.findPath(fromId, toId, maxDepth); }
@@ -196,6 +238,8 @@ export default class KiroGraph {
     const embeddingCount = vecIndexCount > 0 ? vecIndexCount : stats.embeddingCount;
     const EMBEDDABLE = ['function', 'method', 'class', 'interface', 'type_alias', 'component', 'module'];
     const embeddableNodeCount = EMBEDDABLE.reduce((sum, k) => sum + (stats.nodesByKind[k] ?? 0), 0);
+    const pendingFiles = await this.getPendingSyncCount();
+    const syncRunning = this.isIndexLocked();
     return {
       ...stats,
       embeddingCount,
@@ -209,6 +253,9 @@ export default class KiroGraph {
       frameworks: this.config.frameworkHints ?? [],
       architectureEnabled: this.config.enableArchitecture ?? false,
       ...(this.config.enableArchitecture ? { architectureStats: this.db.getArchStats() } : {}),
+      pendingFiles,
+      syncRunning,
+      syncWarningThreshold: this.config.syncWarningThreshold ?? 10,
     };
   }
 
@@ -242,6 +289,8 @@ export default class KiroGraph {
   // ── Misc ───────────────────────────────────────────────────────────────────
 
   getProjectRoot(): string { return this.projectRoot; }
+
+  getDatabase(): GraphDatabase { return this.db; }
 
   close(): void {
     this.vectors.close();

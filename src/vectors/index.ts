@@ -31,6 +31,8 @@ const DEFAULT_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
 const DEFAULT_EMBEDDING_DIM = 768;
 const GLOBAL_MODELS_DIR = path.join(homedir(), '.kirograph', 'models');
 const BATCH_SIZE = 32;
+const MIN_BATCH_SIZE = 4;
+const MAX_TOKEN_CHARS = 2000;
 
 /** Node kinds worth embedding — high information density */
 const EMBEDDABLE_KINDS = new Set<Node['kind']>([
@@ -52,6 +54,9 @@ async function getTransformers() {
 /**
  * Build a searchable text representation of a node.
  * Mirrors CodeGraph TextEmbedder.createNodeText().
+ * Truncated to MAX_TOKEN_CHARS to stay within the model's memory-safe token limit.
+ * Priority: kind + name > qualified name > file path > signature > docstring.
+ * This ensures the most important search signal is always preserved.
  */
 function nodeToText(node: Node): string {
   const parts = [`${node.kind}: ${node.name}`];
@@ -61,7 +66,12 @@ function nodeToText(node: Node): string {
   parts.push(`file: ${node.filePath}`);
   if (node.signature) parts.push(`signature: ${node.signature}`);
   if (node.docstring) parts.push(`documentation: ${node.docstring}`);
-  return parts.join('\n');
+  const text = parts.join('\n');
+  if (text.length > MAX_TOKEN_CHARS) {
+    logDebug(`nodeToText: truncated ${node.id} from ${text.length} to ${MAX_TOKEN_CHARS} chars`);
+    return text.slice(0, MAX_TOKEN_CHARS);
+  }
+  return text;
 }
 
 /** Cosine similarity between two equal-length Float32Arrays. */
@@ -322,14 +332,32 @@ export class VectorManager {
 
   /**
    * Embed all eligible nodes in the database that don't yet have embeddings.
-   * Processes in batches of BATCH_SIZE.
+   * Streams nodes in pages to avoid loading the entire node set into memory —
+   * critical for large codebases (100K+ symbols) where a single getAllNodes()
+   * call can exhaust the Node.js heap or the WASM linear memory.
+   *
+   * Uses dynamic batch sizing: starts at BATCH_SIZE, halves on OOM errors,
+   * and recovers back to full size after successful batches.
+   *
+   * Emits a pre-flight warning via onProgress when the embeddable node count
+   * exceeds LARGE_CODEBASE_THRESHOLD so the CLI can surface it to the user.
    */
   async embedAll(onProgress?: (current: number, total: number) => void): Promise<number> {
     if (!this.isInitialized() || !this.pipeline) return 0;
 
     const modelId = this.config.embeddingModel || DEFAULT_MODEL;
-    const allNodes = this.db.getAllNodes().filter(n => EMBEDDABLE_KINDS.has(n.kind));
-    // When a non-cosine engine is active it is the sole store — query it directly instead of SQLite
+    const EMBEDDABLE_KINDS_ARRAY = [...EMBEDDABLE_KINDS] as string[];
+
+    // Pre-flight: count embeddable nodes without loading them
+    const totalEmbeddable = this.db.countEmbeddableNodes(EMBEDDABLE_KINDS_ARRAY);
+    const LARGE_CODEBASE_THRESHOLD = 100_000;
+    if (totalEmbeddable > LARGE_CODEBASE_THRESHOLD) {
+      // Signal the large-codebase warning via a special progress event.
+      // current=-1 is the sentinel; the CLI renderer checks for it.
+      onProgress?.(-1, totalEmbeddable);
+    }
+
+    // Collect already-embedded IDs (needed to skip nodes already in the index)
     const existingIds = new Set(
       this.typesenseIndex?.isAvailable()
         ? await this.typesenseIndex.getEmbeddedNodeIds()
@@ -345,17 +373,52 @@ export class VectorManager {
               ? this.vecIndex.getEmbeddedNodeIds()
               : this.db.getEmbeddedNodeIds()
     );
-    const pending = allNodes.filter(n => !existingIds.has(n.id));
 
-    if (pending.length === 0) {
-      // Still save Orama in case prior deleteEmbeddings calls changed the index
+    // Stream nodes in pages — never hold more than PAGE_SIZE nodes in memory at once
+    const PAGE_SIZE = 2000;
+    let pageOffset = 0;
+    let processed = 0;
+    let currentBatchSize = BATCH_SIZE;
+    let consecutiveSuccesses = 0;
+
+    // We need to know the total pending count for progress reporting.
+    // Approximate: totalEmbeddable - existingIds.size (may be slightly off if
+    // existingIds contains IDs for non-embeddable kinds, but close enough).
+    const totalPending = Math.max(0, totalEmbeddable - existingIds.size);
+    if (totalPending === 0) {
       if (this.oramaIndex?.isAvailable()) await this.oramaIndex.save();
       return 0;
     }
 
-    let processed = 0;
-    for (let i = 0; i < pending.length; i += BATCH_SIZE) {
-      const batch = pending.slice(i, i + BATCH_SIZE);
+    logDebug(`VectorManager: embedding ~${totalPending} nodes (${existingIds.size} already embedded, streaming in pages of ${PAGE_SIZE})`);
+
+    // Buffer of pending nodes from the current page
+    let pageBuffer: Node[] = [];
+    let pageBufferOffset = 0; // index within pageBuffer
+    let pageExhausted = false;
+
+    const fetchNextPage = () => {
+      const page = this.db.getEmbeddableNodesPaged(EMBEDDABLE_KINDS_ARRAY, PAGE_SIZE, pageOffset);
+      pageOffset += page.length;
+      pageBuffer = page.filter(n => !existingIds.has(n.id));
+      pageBufferOffset = 0;
+      if (page.length < PAGE_SIZE) pageExhausted = true;
+    };
+
+    fetchNextPage();
+
+    while (pageBuffer.length > 0 || (!pageExhausted && pageBufferOffset >= pageBuffer.length)) {
+      // Refill page buffer when exhausted
+      if (pageBufferOffset >= pageBuffer.length) {
+        if (pageExhausted) break;
+        fetchNextPage();
+        if (pageBuffer.length === 0) break;
+      }
+
+      // Slice a batch from the current page buffer
+      const batch = pageBuffer.slice(pageBufferOffset, pageBufferOffset + currentBatchSize);
+      if (batch.length === 0) break;
+
       const texts = batch.map(n => `search_document: ${nodeToText(n)}`);
 
       try {
@@ -364,14 +427,14 @@ export class VectorManager {
         const dim = dims[1] ?? (this.config.embeddingDim ?? DEFAULT_EMBEDDING_DIM);
         const flat = toFloat32Array(outputs.data);
 
-        // Collect Typesense batch for bulk import (one HTTP request per batch)
         const tsNodes: Node[] = [];
         const tsEmbeddings: Float32Array[] = [];
+        const qdNodes: Node[] = [];
+        const qdEmbeddings: Float32Array[] = [];
 
         for (let j = 0; j < batch.length; j++) {
           const node = batch[j]!;
           const embedding = flat.slice(j * dim, (j + 1) * dim);
-          // non-cosine engines are sole stores of record when active — skip the SQLite vectors table
           if (!this.vecIndex?.isAvailable() && !this.oramaIndex?.isAvailable() && !this.pgliteIndex?.isAvailable() && !this.lancedbIndex?.isAvailable() && !this.qdrantIndex?.isAvailable() && !this.typesenseIndex?.isAvailable()) {
             this.db.storeEmbedding(node.id, embedding, modelId);
           }
@@ -379,20 +442,59 @@ export class VectorManager {
           if (this.oramaIndex?.isAvailable()) await this.oramaIndex.upsert(node, embedding);
           if (this.pgliteIndex?.isAvailable()) await this.pgliteIndex.upsert(node, embedding);
           if (this.lancedbIndex?.isAvailable()) await this.lancedbIndex.upsert(node, embedding);
-          if (this.qdrantIndex?.isAvailable()) await this.qdrantIndex.upsert(node, embedding);
+          if (this.qdrantIndex?.isAvailable()) { qdNodes.push(node); qdEmbeddings.push(embedding); }
           if (this.typesenseIndex?.isAvailable()) { tsNodes.push(node); tsEmbeddings.push(embedding); }
         }
 
+        if (qdNodes.length > 0) await this.qdrantIndex!.bulkUpsert(qdNodes, qdEmbeddings);
         if (tsNodes.length > 0) await this.typesenseIndex!.bulkUpsert(tsNodes, tsEmbeddings);
+
+        pageBufferOffset += batch.length;
+        processed += batch.length;
+        consecutiveSuccesses++;
+
+        if (currentBatchSize < BATCH_SIZE && consecutiveSuccesses >= 5) {
+          currentBatchSize = Math.min(currentBatchSize * 2, BATCH_SIZE);
+          logDebug(`VectorManager: batch size recovered to ${currentBatchSize}`);
+          consecutiveSuccesses = 0;
+        }
       } catch (err) {
-        logWarn('VectorManager: batch embedding failed', { batchStart: i, error: String(err) });
+        const errMsg = String(err);
+        const isOOM = errMsg.includes('bad allocation') || errMsg.includes('OOM') || errMsg.includes('out of memory');
+
+        if (isOOM && currentBatchSize > MIN_BATCH_SIZE) {
+          currentBatchSize = Math.max(Math.floor(currentBatchSize / 2), MIN_BATCH_SIZE);
+          consecutiveSuccesses = 0;
+          logWarn(`VectorManager: OOM at batch offset ${pageBufferOffset} — reducing batch size to ${currentBatchSize} and retrying`, {
+            batchSize: currentBatchSize,
+            nodeIds: batch.slice(0, 3).map(n => n.id),
+          });
+          // Don't advance pageBufferOffset — retry the same batch
+        } else if (isOOM && currentBatchSize <= MIN_BATCH_SIZE) {
+          logError(`VectorManager: OOM even at minimum batch size ${MIN_BATCH_SIZE} — skipping ${batch.length} nodes`, {
+            batchStart: pageBufferOffset,
+            skippedNodes: batch.map(n => `${n.kind}:${n.name} (${n.filePath})`).slice(0, 5),
+          });
+          pageBufferOffset += batch.length;
+          processed += batch.length;
+          consecutiveSuccesses = 0;
+        } else {
+          logWarn(`VectorManager: batch embedding failed at offset ${pageBufferOffset}`, {
+            batchSize: currentBatchSize,
+            error: errMsg,
+          });
+          pageBufferOffset += batch.length;
+          processed += batch.length;
+          consecutiveSuccesses = 0;
+        }
       }
 
-      processed += batch.length;
-      onProgress?.(processed, pending.length);
+      onProgress?.(processed, totalPending);
     }
 
     if (this.oramaIndex?.isAvailable()) await this.oramaIndex.save();
+
+    logDebug(`VectorManager: embedding complete — ${processed} processed, final batch size: ${currentBatchSize}`);
 
     return processed;
   }
